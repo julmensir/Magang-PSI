@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SIVT AI - Sistem Informasi Virtual TEGALREJO</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- CHAT PAGE -->
+<div id="chatPage">
+  <div class="chat-header">
+    <div class="logo-icon" id="logoIcon">S</div>
+    <div class="header-text">
+      <h1 id="headerTitle">SIVT AI</h1>
+      <div class="tagline" id="headerTagline"><i class="fas fa-robot me-1"></i>Sistem Informasi Virtual TEGALREJO</div>
+    </div>
+    <div class="header-actions">
+      <button onclick="showLogin()" title="Login Admin">
+        <i class="fas fa-user-shield"></i>
+      </button>
+      <button onclick="resetChat()" title="Reset Chat">
+        <i class="fas fa-undo-alt"></i>
+      </button>
+    </div>
+  </div>
+
+  <div class="chat-box" id="chatBox"></div>
+  <div class="quick-buttons" id="quickButtons"></div>
+
+  <div class="chat-input-area">
+    <input type="text" id="chatInput" placeholder="Ketik pertanyaan Anda..."
+           onkeydown="if(event.key === 'Enter') sendMessage()">
+    <button onclick="sendMessage()">
+      <i class="fas fa-paper-plane"></i>
+    </button>
+  </div>
+</div>
+
+<!-- LOGIN PAGE -->
+<div id="loginPage">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="logo-icon">S</div>
+      <h2>SIVT AI</h2>
+      <p>Admin Dashboard</p>
+    </div>
+    <form onsubmit="doLogin(event)">
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Username</label>
+        <input type="text" class="form-control" id="loginUsername" required autocomplete="username">
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Password</label>
+        <input type="password" class="form-control" id="loginPassword" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn-login">
+        <i class="fas fa-sign-in-alt me-2"></i> Login
+      </button>
+      <div class="mt-3 text-center">
+        <a href="#" class="btn-back" onclick="hideLogin(); return false;">
+          <i class="fas fa-arrow-left me-1"></i> Kembali ke Chat
+        </a>
+      </div>
+      <div id="loginError" class="alert alert-danger mt-3" style="display: none; font-size: 13px;"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ADMIN PAGE -->
+<div id="adminPage">
+  <div class="admin-header">
+    <h4><i class="fas fa-user-cog"></i> Dashboard Admin</h4>
+    <div class="admin-user">
+      <span><i class="fas fa-user me-1"></i> <span id="adminUsername">admin</span></span>
+      <button class="btn-logout" onclick="doLogout()">
+        <i class="fas fa-sign-out-alt me-1"></i> Logout
+      </button>
+    </div>
+  </div>
+
+  <div class="admin-content">
+    <ul class="nav nav-tabs" role="tablist">
+      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-general" type="button"><i class="fas fa-cog"></i> Umum</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-keys" type="button"><i class="fas fa-key"></i> API Keys</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-models" type="button"><i class="fas fa-robot"></i> Model</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-knowledge" type="button"><i class="fas fa-book"></i> Pengetahuan</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-prompt" type="button"><i class="fas fa-comment-dots"></i> Prompt</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-security" type="button"><i class="fas fa-shield-alt"></i> Keamanan</button></li>
+    </ul>
+
+    <div class="tab-content pt-3">
+      <!-- TAB UMUM -->
+      <div class="tab-pane fade show active" id="tab-general">
+        <div class="stat-card mb-3">
+          <h6 class="fw-bold mb-3"><i class="fas fa-tag me-2"></i>Identitas AI</h6>
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label small">Nama AI</label>
+              <input type="text" class="form-control" id="cfg-aiName">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Tagline</label>
+              <input type="text" class="form-control" id="cfg-tagline">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">URL Logo (opsional)</label>
+              <input type="text" class="form-control" id="cfg-logoUrl" placeholder="https://...">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Logo Teks (kalau tanpa URL)</label>
+              <input type="text" class="form-control" id="cfg-logoText" maxlength="3">
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Pesan Sambutan</label>
+              <textarea class="form-control" id="cfg-welcomeMessage" rows="3"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="stat-card mb-3">
+          <h6 class="fw-bold mb-3"><i class="fas fa-address-book me-2"></i>Kontak</h6>
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label small">Alamat</label>
+              <input type="text" class="form-control" id="cfg-contact-address">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Telepon</label>
+              <input type="text" class="form-control" id="cfg-contact-phone">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">WhatsApp</label>
+              <input type="text" class="form-control" id="cfg-contact-whatsapp">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Email</label>
+              <input type="text" class="form-control" id="cfg-contact-email">
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Jam Pelayanan</label>
+              <input type="text" class="form-control" id="cfg-contact-hours">
+            </div>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" onclick="saveGeneral()">
+          <i class="fas fa-save me-1"></i> Simpan
+        </button>
+      </div>
+
+      <!-- TAB API KEYS -->
+      <div class="tab-pane fade" id="tab-keys">
+        <div class="stat-card mb-3">
+          <h6 class="fw-bold mb-3"><i class="fas fa-plus me-2"></i>Tambah API Key</h6>
+          <p class="small text-muted">
+            Kalau kuota habis, tambahkan key baru dari
+            <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>.
+          </p>
+          <div class="input-group">
+            <input type="text" class="form-control" id="newApiKey" placeholder="Tempel API key baru...">
+            <button class="btn btn-primary" onclick="addApiKey()">
+              <i class="fas fa-plus"></i> Tambah
+            </button>
+          </div>
+          <div id="addKeyStatus" class="mt-2 small"></div>
+        </div>
+        <div class="stat-card">
+          <h6 class="fw-bold mb-3"><i class="fas fa-list me-2"></i>Daftar API Key</h6>
+          <div id="apiKeysList"></div>
+        </div>
+      </div>
+
+      <!-- TAB MODELS -->
+      <div class="tab-pane fade" id="tab-models">
+        <div class="stat-card">
+          <h6 class="fw-bold mb-3"><i class="fas fa-robot me-2"></i>Daftar Model (urutan prioritas)</h6>
+          <p class="small text-muted">Model dicoba dari atas ke bawah.</p>
+          <div id="modelsList"></div>
+          <button class="btn btn-outline-primary btn-sm mt-2" onclick="addModel()">
+            <i class="fas fa-plus"></i> Tambah Model
+          </button>
+          <button class="btn btn-primary btn-sm mt-2 ms-2" onclick="saveModels()">
+            <i class="fas fa-save"></i> Simpan
+          </button>
+        </div>
+      </div>
+
+      <!-- TAB KNOWLEDGE -->
+      <div class="tab-pane fade" id="tab-knowledge">
+        <div class="stat-card mb-3">
+          <h6 class="fw-bold mb-3"><i class="fas fa-upload me-2"></i>Upload File Pengetahuan (.txt)</h6>
+          <input type="file" class="form-control mb-2" id="knowledgeFile" accept=".txt">
+          <button class="btn btn-primary btn-sm" onclick="uploadKnowledge()">
+            <i class="fas fa-upload me-1"></i> Upload
+          </button>
+          <button class="btn btn-outline-primary btn-sm ms-2" onclick="reloadKnowledge()">
+            <i class="fas fa-sync me-1"></i> Reload
+          </button>
+          <div id="uploadStatus" class="mt-2 small"></div>
+        </div>
+        <div class="stat-card">
+          <h6 class="fw-bold mb-3"><i class="fas fa-file-alt me-2"></i>File Pengetahuan</h6>
+          <div id="knowledgeFilesList"></div>
+        </div>
+      </div>
+
+      <!-- TAB PROMPT -->
+      <div class="tab-pane fade" id="tab-prompt">
+        <div class="stat-card">
+          <h6 class="fw-bold mb-3"><i class="fas fa-comment-dots me-2"></i>System Instruction (Prompt AI)</h6>
+          <p class="small text-muted">Instruksi ini mengatur kepribadian & aturan AI.</p>
+          <textarea class="form-control" id="cfg-systemInstruction" rows="15" style="font-family: monospace; font-size: 12px;"></textarea>
+          <button class="btn btn-primary mt-2" onclick="savePrompt()">
+            <i class="fas fa-save me-1"></i> Simpan Prompt
+          </button>
+        </div>
+      </div>
+
+      <!-- TAB SECURITY -->
+      <div class="tab-pane fade" id="tab-security">
+        <div class="stat-card mb-3">
+          <h6 class="fw-bold mb-3"><i class="fas fa-key me-2"></i>Ganti Password Admin</h6>
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label small">Password Lama</label>
+              <input type="password" class="form-control" id="oldPassword">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Password Baru (min 8 karakter)</label>
+              <input type="password" class="form-control" id="newPassword">
+            </div>
+          </div>
+          <button class="btn btn-warning mt-3" onclick="changePassword()">
+            <i class="fas fa-key me-1"></i> Ganti Password
+          </button>
+          <div id="passwordStatus" class="mt-2 small"></div>
+        </div>
+
+        <div class="stat-card">
+          <h6 class="fw-bold mb-3"><i class="fas fa-info-circle me-2"></i>Info Keamanan</h6>
+          <ul class="small mb-0">
+            <li>Login pakai JWT + bcrypt (password tidak disimpan plain text)</li>
+            <li>Rate limit: 20 pesan/menit per IP, 10 login/15 menit</li>
+            <li>File .env, keys.json, config.json tidak bisa diakses dari browser</li>
+            <li>Pesan user dibatasi maksimal 2000 karakter</li>
+            <li>Disarankan pakai Cloudflare untuk HTTPS & DDoS protection</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="script.js"></script>
+</body>
+</html>

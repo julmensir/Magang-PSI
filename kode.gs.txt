@@ -1,0 +1,405 @@
+/**
+ * SIVAI TEGALREJO - Sistem Informasi Virtual Assistant Berbasis AI Chatbot
+ * Senior Google Apps Script Developer + UI/UX Designer
+ * Version: 1.0.0
+ */
+
+// ============================================
+// KONFIGURASI DAN INISIALISASI
+// ============================================
+
+/**
+ * doGet() - Entry point untuk Web App
+ * Menampilkan halaman utama Index.html
+ */
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('Index')
+    .setTitle('SIVAI TEGALREJO - Virtual Assistant')
+    .setFaviconUrl('https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/img/favicon.ico')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/**
+ * initializeSheets() - Membuat sheet otomatis saat pertama kali deploy
+ * Hanya berjalan jika sheet belum ada
+ */
+function initializeSheets() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet;
+    
+    // Cek dan buat knowledge_base
+    if (!ss.getSheetByName('knowledge_base')) {
+      sheet = ss.insertSheet('knowledge_base');
+      const headers1 = ['id', 'kategori', 'pertanyaan', 'jawaban', 'keywords', 'link_file'];
+      sheet.getRange(1, 1, 1, headers1.length).setValues([headers1]);
+      sheet.getRange('1:1').setFontWeight('bold');
+      sheet.getRange('1:1').setBackground('#0d47a1');
+      sheet.getRange('1:1').setFontColor('#ffffff');
+      
+      // Isi data contoh 10 data
+      const contohData = [
+        [1, 'KK', 'Syarat membuat KK baru', 'Syarat KK Baru:\n1. Surat Pengantar RT/RW\n2. KTP Suami Istri\n3. Buku Nikah\n4. Mengisi Formulir', 'kk baru, buat kk', ''],
+        [2, 'KTP', 'Syarat KTP hilang', 'Syarat KTP Hilang:\n1. Surat Kehilangan dari Polisi\n2. KK\n3. Mengisi Formulir', 'ktp hilang', ''],
+        [3, 'SKTM', 'Syarat membuat SKTM', 'Syarat SKTM:\n1. KK\n2. KTP\n3. Surat Pengantar RT/RW', 'sktm, keterangan tidak mampu', ''],
+        [4, 'Domisili', 'Syarat Surat Domisili', 'Syarat Surat Domisili:\n1. KK\n2. KTP\n3. Surat Pengantar RT/RW', 'domisili, tempat tinggal', ''],
+        [5, 'Izin Keramaian', 'Syarat Izin Keramaian', 'Syarat Izin Keramaian:\n1. Surat Permohonan\n2. KK/KTP\n3. Surat Pengantar RT/RW\n4. Mengisi Formulir', 'keramaian, izin acara', ''],
+        [6, 'Umum', 'Jam pelayanan Kemantren', 'Jam Pelayanan Kemantren Tegalrejo:\nSenin - Jumat: 08.00 - 15.00 WIB\nSabtu: 08.00 - 12.00 WIB', 'jam buka, jam kerja, pelayanan', ''],
+        [7, 'Umum', 'Alamat Kemantren Tegalrejo', 'Alamat Kemantren Tegalrejo:\nJl. Tegalrejo No.1, Yogyakarta\nTelp: (0274) 123456', 'alamat, lokasi, kemantren', ''],
+        [8, 'Umum', 'Nomor telepon petugas', 'Nomor Telepon Kemantren Tegalrejo:\n(0274) 123456\nWhatsApp: 0812-3456-7890', 'telepon, contact, whatsapp', ''],
+        [9, 'KK', 'Syarat perubahan KK', 'Syarat Perubahan KK:\n1. KK Lama\n2. KTP\n3. Surat Pengantar RT/RW\n4. Mengisi Formulir', 'ubah kk, ganti kk', ''],
+        [10, 'KTP', 'Syarat membuat KTP pertama', 'Syarat KTP Pertama:\n1. KK\n2. Surat Pengantar RT/RW\n3. Mengisi Formulir', 'ktp baru, buat ktp, pertama', '']
+      ];
+      sheet.getRange(2, 1, contohData.length, contohData[0].length).setValues(contohData);
+    }
+    
+    // Cek dan buat chat_log
+    if (!ss.getSheetByName('chat_log')) {
+      sheet = ss.insertSheet('chat_log');
+      const headers2 = ['timestamp', 'nama_user', 'pertanyaan_user', 'jawaban_bot', 'status'];
+      sheet.getRange(1, 1, 1, headers2.length).setValues([headers2]);
+      sheet.getRange('1:1').setFontWeight('bold');
+      sheet.getRange('1:1').setBackground('#0d47a1');
+      sheet.getRange('1:1').setFontColor('#ffffff');
+    }
+    
+    // Cek dan buat admin
+    if (!ss.getSheetByName('admin')) {
+      sheet = ss.insertSheet('admin');
+      const headers3 = ['username', 'password', 'role'];
+      sheet.getRange(1, 1, 1, headers3.length).setValues([headers3]);
+      sheet.getRange('1:1').setFontWeight('bold');
+      sheet.getRange('1:1').setBackground('#0d47a1');
+      sheet.getRange('1:1').setFontColor('#ffffff');
+      // Default admin
+      sheet.getRange(2, 1, 1, 3).setValues([['admin', 'admin123', 'admin']]);
+    }
+    
+    return true;
+  } catch (e) {
+    console.error('Error initializeSheets:', e);
+    return false;
+  }
+}
+
+// ============================================
+// FUNGSI CHATBOT UTAMA
+// ============================================
+
+/**
+ * getBotReply(pertanyaan) - Fungsi utama chatbot
+ * @param {string} pertanyaan - Pertanyaan dari user
+ * @returns {string} Jawaban bot
+ */
+function getBotReply(pertanyaan, namaUser = 'Anonim') {
+  try {
+    // Pastikan sheet sudah terinisialisasi
+    initializeSheets();
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('knowledge_base');
+    
+    if (!sheet) {
+      return 'Maaf, sistem sedang dalam perbaikan. Silakan hubungi petugas.';
+    }
+    
+    // Ambil semua data
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+    const pertanyaanLower = pertanyaan.toLowerCase().trim();
+    
+    let jawaban = '';
+    let ditemukan = false;
+    
+    // Cari di knowledge_base
+    for (let i = 0; i < data.length; i++) {
+      const id = data[i][0];
+      const kategori = data[i][1];
+      const q = data[i][2];
+      const j = data[i][3];
+      const keywords = data[i][4];
+      
+      // Cek di pertanyaan
+      if (q && q.toLowerCase().includes(pertanyaanLower)) {
+        jawaban = j;
+        ditemukan = true;
+        break;
+      }
+      
+      // Cek di keywords
+      if (keywords) {
+        const keywordList = keywords.toLowerCase().split(',').map(k => k.trim());
+        for (let keyword of keywordList) {
+          if (pertanyaanLower.includes(keyword) || keyword.includes(pertanyaanLower)) {
+            jawaban = j;
+            ditemukan = true;
+            break;
+          }
+        }
+        if (ditemukan) break;
+      }
+    }
+    
+    // Jika tidak ditemukan
+    if (!jawaban) {
+      jawaban = `Maaf, saya belum memiliki informasi tentang pertanyaan Anda. 
+      
+Pertanyaan Anda akan kami teruskan ke petugas.
+
+💬 Hubungi Petugas:
+📞 Telepon: (0274) 123456
+📱 WhatsApp: 0812-3456-7890
+📍 Datang langsung: Jl. Tegalrejo No.1, Yogyakarta
+
+Jam Pelayanan: Senin-Jumat 08.00-15.00 WIB`;
+    }
+    
+    // Simpan ke chat_log
+    const chatSheet = ss.getSheetByName('chat_log');
+    if (chatSheet) {
+      const timestamp = new Date();
+      const status = ditemukan ? 'terjawab' : 'diteruskan';
+      chatSheet.appendRow([
+        timestamp,
+        namaUser || 'Anonim',
+        pertanyaan,
+        jawaban.substring(0, 500), // Batasi panjang
+        status
+      ]);
+    }
+    
+    return jawaban;
+  } catch (e) {
+    console.error('Error getBotReply:', e);
+    return 'Maaf, terjadi kesalahan. Silakan coba lagi atau hubungi petugas.';
+  }
+}
+
+// ============================================
+// FUNGSI MANAJEMEN KNOWLEDGE BASE
+// ============================================
+
+/**
+ * getKnowledge() - Mengambil semua data knowledge_base
+ * @returns {Array} Array of objects
+ */
+function getKnowledge() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('knowledge_base');
+    
+    if (!sheet) {
+      initializeSheets();
+      return [];
+    }
+    
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6).getValues();
+    const result = data.map(row => ({
+      id: row[0],
+      kategori: row[1],
+      pertanyaan: row[2],
+      jawaban: row[3],
+      keywords: row[4],
+      link_file: row[5] || ''
+    }));
+    
+    return result;
+  } catch (e) {
+    console.error('Error getKnowledge:', e);
+    return [];
+  }
+}
+
+/**
+ * simpanKnowledge(data) - Tambah/Edit/Hapus data Q&A
+ * @param {Object} data - Data yang akan disimpan
+ * @param {string} action - 'add', 'edit', 'delete'
+ * @returns {Object} Status operasi
+ */
+function simpanKnowledge(data, action) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('knowledge_base');
+    
+    if (!sheet) {
+      initializeSheets();
+      return { success: false, message: 'Sheet tidak ditemukan' };
+    }
+    
+    if (action === 'add') {
+      // Tambah data baru
+      const lastRow = sheet.getLastRow();
+      const newId = lastRow > 1 ? sheet.getRange(lastRow, 1).getValue() + 1 : 1;
+      const newData = [
+        newId,
+        data.kategori || 'Umum',
+        data.pertanyaan || '',
+        data.jawaban || '',
+        data.keywords || '',
+        data.link_file || ''
+      ];
+      sheet.appendRow(newData);
+      return { success: true, message: 'Data berhasil ditambahkan' };
+      
+    } else if (action === 'edit') {
+      // Edit data existing
+      const id = parseInt(data.id);
+      const dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6);
+      const values = dataRange.getValues();
+      
+      for (let i = 0; i < values.length; i++) {
+        if (parseInt(values[i][0]) === id) {
+          const row = i + 2; // +2 karena data mulai dari baris 2
+          sheet.getRange(row, 2).setValue(data.kategori || 'Umum');
+          sheet.getRange(row, 3).setValue(data.pertanyaan || '');
+          sheet.getRange(row, 4).setValue(data.jawaban || '');
+          sheet.getRange(row, 5).setValue(data.keywords || '');
+          sheet.getRange(row, 6).setValue(data.link_file || '');
+          return { success: true, message: 'Data berhasil diupdate' };
+        }
+      }
+      return { success: false, message: 'Data tidak ditemukan' };
+      
+    } else if (action === 'delete') {
+      // Hapus data
+      const id = parseInt(data.id);
+      const dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, 6);
+      const values = dataRange.getValues();
+      
+      for (let i = 0; i < values.length; i++) {
+        if (parseInt(values[i][0]) === id) {
+          const row = i + 2;
+          sheet.deleteRow(row);
+          return { success: true, message: 'Data berhasil dihapus' };
+        }
+      }
+      return { success: false, message: 'Data tidak ditemukan' };
+    }
+    
+    return { success: false, message: 'Aksi tidak dikenal' };
+  } catch (e) {
+    console.error('Error simpanKnowledge:', e);
+    return { success: false, message: 'Terjadi kesalahan: ' + e.message };
+  }
+}
+
+// ============================================
+// FUNGSI ADMIN
+// ============================================
+
+/**
+ * login(username, password) - Validasi login admin
+ * @param {string} username - Username
+ * @param {string} password - Password
+ * @returns {Object} Status login
+ */
+function login(username, password) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('admin');
+    
+    if (!sheet) {
+      initializeSheets();
+      return { success: false, message: 'Sistem belum terinisialisasi' };
+    }
+    
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues();
+    
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][0] === username && data[i][1] === password) {
+        return { 
+          success: true, 
+          message: 'Login berhasil',
+          username: username,
+          role: data[i][2] || 'admin'
+        };
+      }
+    }
+    
+    return { success: false, message: 'Username atau password salah' };
+  } catch (e) {
+    console.error('Error login:', e);
+    return { success: false, message: 'Terjadi kesalahan sistem' };
+  }
+}
+
+/**
+ * getChatLog() - Mengambil semua data chat_log
+ * @returns {Array} Array of objects
+ */
+function getChatLog() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('chat_log');
+    
+    if (!sheet) {
+      initializeSheets();
+      return [];
+    }
+    
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getValues();
+    const result = data.map(row => ({
+      timestamp: row[0],
+      nama_user: row[1] || 'Anonim',
+      pertanyaan_user: row[2],
+      jawaban_bot: row[3],
+      status: row[4] || 'terjawab'
+    }));
+    
+    // Return terbalik (terbaru di atas)
+    return result.reverse();
+  } catch (e) {
+    console.error('Error getChatLog:', e);
+    return [];
+  }
+}
+
+/**
+ * getStatistics() - Mengambil data statistik
+ * @returns {Object} Data statistik
+ */
+function getStatistics() {
+  try {
+    const chatLog = getChatLog();
+    const knowledge = getKnowledge();
+    
+    // Total chat hari ini
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const chatToday = chatLog.filter(log => {
+      const logDate = new Date(log.timestamp);
+      logDate.setHours(0, 0, 0, 0);
+      return logDate.getTime() === today.getTime();
+    });
+    
+    // Top 5 pertanyaan
+    const questionCount = {};
+    chatLog.forEach(log => {
+      const question = log.pertanyaan_user || '';
+      if (question) {
+        questionCount[question] = (questionCount[question] || 0) + 1;
+      }
+    });
+    
+    const sortedQuestions = Object.entries(questionCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([question, count]) => ({ question, count }));
+    
+    return {
+      totalChat: chatLog.length,
+      chatToday: chatToday.length,
+      totalKnowledge: knowledge.length,
+      topQuestions: sortedQuestions
+    };
+  } catch (e) {
+    console.error('Error getStatistics:', e);
+    return {
+      totalChat: 0,
+      chatToday: 0,
+      totalKnowledge: 0,
+      topQuestions: []
+    };
+  }
+}

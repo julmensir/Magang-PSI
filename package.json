@@ -1,0 +1,33 @@
+{
+  "name": "layraga-ai-chatbot",
+  "version": "1.0.0",
+  "description": "LayRaga AI - Asisten chat gaul dengan fitur multimodal.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "gemini",
+    "ai",
+    "chatbot",
+    "layraga",
+    "multimodal"
+  ],
+  "author": "User",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@google/genai": "^1.30.0",
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.7.0",
+    "jsonwebtoken": "^9.0.3",
+    "mammoth": "^1.12.2",
+    "multer": "^2.3.0",
+    "pdfjs-dist": "^6.3.289"
+  }
+}
