@@ -1,5 +1,6 @@
 let currentUser = null;
 let adminToken = null;
+let chatSessionId = null;
 
 // ============================================================
 // INIT
@@ -8,6 +9,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('chatPage').style.display = 'flex';
     document.getElementById('loginPage').style.display = 'none';
     document.getElementById('adminPage').style.display = 'none';
+
+    chatSessionId = localStorage.getItem('sivt_sessionId') || null;
+
     await loadPublicConfig();
 });
 
@@ -15,19 +19,15 @@ async function loadPublicConfig() {
     try {
         const res = await fetch('/api/config/public');
         const cfg = await res.json();
-
         document.getElementById('headerTitle').textContent = cfg.aiName;
         document.getElementById('headerTagline').innerHTML =
             `<i class="fas fa-robot me-1"></i>${cfg.tagline}`;
-
         const logoIcon = document.getElementById('logoIcon');
         if (cfg.logoUrl) {
             logoIcon.innerHTML = `<img src="${cfg.logoUrl}" alt="logo" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
         } else {
             logoIcon.textContent = cfg.logoText || 'S';
         }
-
-        // Welcome message
         const chatBox = document.getElementById('chatBox');
         chatBox.innerHTML = `
           <div class="bubble bubble-bot">
@@ -36,8 +36,6 @@ async function loadPublicConfig() {
             <div class="bubble-time">Online</div>
           </div>
         `;
-
-        // Quick buttons
         const qb = document.getElementById('quickButtons');
         qb.innerHTML = '';
         (cfg.quickButtons || []).forEach(b => {
@@ -47,9 +45,7 @@ async function loadPublicConfig() {
             btn.onclick = () => sendQuickQuestion(b.question);
             qb.appendChild(btn);
         });
-    } catch (err) {
-        console.error('Gagal load config:', err);
-    }
+    } catch (err) { console.error('Gagal load config:', err); }
 }
 
 // ============================================================
@@ -73,7 +69,6 @@ function addMessage(text, sender) {
     const chatBox = document.getElementById('chatBox');
     const bubble = document.createElement('div');
     bubble.className = `bubble bubble-${sender}`;
-
     if (sender === 'bot') {
         const botName = document.createElement('div');
         botName.className = 'bot-name';
@@ -85,12 +80,10 @@ function addMessage(text, sender) {
     } else {
         bubble.textContent = text;
     }
-
     const time = document.createElement('div');
     time.className = 'bubble-time';
     time.textContent = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
     bubble.appendChild(time);
-
     chatBox.appendChild(bubble);
     chatBox.scrollTop = chatBox.scrollHeight;
     return bubble;
@@ -100,22 +93,18 @@ function addEmptyBotMessage() {
     const chatBox = document.getElementById('chatBox');
     const bubble = document.createElement('div');
     bubble.className = 'bubble bubble-bot';
-
     const botName = document.createElement('div');
     botName.className = 'bot-name';
     botName.innerHTML = `<i class="fas fa-robot" style="color: var(--primary);"></i> SIVT AI`;
     bubble.appendChild(botName);
-
     const textNode = document.createElement('div');
     textNode.className = 'stream-text';
     textNode.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
     bubble.appendChild(textNode);
-
     const time = document.createElement('div');
     time.className = 'bubble-time';
     time.textContent = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
     bubble.appendChild(time);
-
     chatBox.appendChild(bubble);
     chatBox.scrollTop = chatBox.scrollHeight;
     return textNode;
@@ -124,19 +113,19 @@ function addEmptyBotMessage() {
 async function getBotResponse(question) {
     const botTextEl = addEmptyBotMessage();
     let fullText = '';
+    let pendingSuggestions = null;
+    let fromMemory = false;
 
     try {
         const response = await fetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                conversation: [{ role: 'user', text: question }]
+                message: question,
+                sessionId: chatSessionId
             })
         });
-
-        if (!response.ok || !response.body) {
-            throw new Error('Server tidak merespons.');
-        }
+        if (!response.ok || !response.body) throw new Error('Server tidak merespons.');
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -145,32 +134,69 @@ async function getBotResponse(question) {
         while (true) {
             const { value, done } = await reader.read();
             if (done) break;
-
             buffer += decoder.decode(value, { stream: true });
             const parts = buffer.split('\n\n');
             buffer = parts.pop();
-
             for (const line of parts) {
                 if (!line.startsWith('data: ')) continue;
                 const jsonStr = line.slice(6).trim();
                 if (!jsonStr) continue;
-
                 let obj;
                 try { obj = JSON.parse(jsonStr); } catch (_) { continue; }
+
+                if (obj.sessionId) {
+                    chatSessionId = obj.sessionId;
+                    localStorage.setItem('sivt_sessionId', chatSessionId);
+                }
+                if (obj.meta && obj.meta.source === 'memory') fromMemory = true;
 
                 if (obj.delta) {
                     fullText += obj.delta;
                     botTextEl.innerHTML = formatText(fullText);
-                    document.getElementById('chatBox').scrollTop =
-                        document.getElementById('chatBox').scrollHeight;
+                    document.getElementById('chatBox').scrollTop = document.getElementById('chatBox').scrollHeight;
+                } else if (obj.needSuggestions) {
+                    pendingSuggestions = obj.suggestions;
                 } else if (obj.error) {
                     botTextEl.textContent = 'Error: ' + obj.error;
                 }
             }
         }
+
+        if (fromMemory && fullText.length > 0) {
+            const note = document.createElement('div');
+            note.style.cssText = 'font-size: 10px; color: #0d47a1; margin-top: 6px; opacity: 0.8;';
+            note.innerHTML = '<i class="fas fa-brain"></i> dijawab dari memori AI';
+            botTextEl.parentElement.appendChild(note);
+        }
+
+        if (pendingSuggestions && Array.isArray(pendingSuggestions) && pendingSuggestions.length > 0) {
+            showSuggestions(pendingSuggestions);
+        }
     } catch (err) {
         botTextEl.textContent = 'Maaf, terjadi kesalahan: ' + err.message;
     }
+}
+
+function showSuggestions(suggestions) {
+    const chatBox = document.getElementById('chatBox');
+    const wrap = document.createElement('div');
+    wrap.className = 'suggestions-wrap';
+    const title = document.createElement('div');
+    title.className = 'suggestions-title';
+    title.innerHTML = '<i class="fas fa-lightbulb me-1"></i> Mungkin kamu mau tanya salah satu ini:';
+    wrap.appendChild(title);
+    const list = document.createElement('div');
+    list.className = 'suggestions-list';
+    suggestions.forEach(text => {
+        const chip = document.createElement('button');
+        chip.className = 'suggestion-chip';
+        chip.textContent = text;
+        chip.onclick = () => { addMessage(text, 'user'); getBotResponse(text); };
+        list.appendChild(chip);
+    });
+    wrap.appendChild(list);
+    chatBox.appendChild(wrap);
+    chatBox.scrollTop = chatBox.scrollHeight;
 }
 
 function formatText(text) {
@@ -180,11 +206,14 @@ function formatText(text) {
 }
 
 function resetChat() {
+    chatSessionId = null;
+    localStorage.removeItem('sivt_sessionId');
     loadPublicConfig();
+    console.log('[CHAT] Sesi direset. Percakapan baru dimulai.');
 }
 
 // ============================================================
-// LOGIN / LOGOUT
+// LOGIN
 // ============================================================
 function showLogin() {
     document.getElementById('chatPage').style.display = 'none';
@@ -212,14 +241,14 @@ async function doLogin(event) {
             body: JSON.stringify({ username, password })
         });
         const data = await res.json();
-
         if (data.success) {
             adminToken = data.token;
             currentUser = { username };
             document.getElementById('adminUsername').textContent = username;
             document.getElementById('loginPage').style.display = 'none';
             document.getElementById('chatPage').style.display = 'none';
-            document.getElementById('adminPage').style.display = 'block';
+            document.getElementById('adminPage').style.display = 'flex';
+            document.getElementById('adminPage').style.flexDirection = 'column';
             loadAdminConfig();
         } else {
             errorEl.textContent = data.message || 'Login gagal';
@@ -232,11 +261,8 @@ async function doLogin(event) {
 }
 
 async function doLogout() {
-    try {
-        await adminFetch('/api/admin/logout', { method: 'POST' });
-    } catch (_) {}
-    currentUser = null;
-    adminToken = null;
+    try { await adminFetch('/api/admin/logout', { method: 'POST' }); } catch (_) {}
+    currentUser = null; adminToken = null;
     document.getElementById('adminPage').style.display = 'none';
     document.getElementById('chatPage').style.display = 'flex';
     document.getElementById('loginPage').style.display = 'none';
@@ -255,41 +281,49 @@ function adminFetch(url, opts = {}) {
 }
 
 // ============================================================
-// ADMIN — LOAD CONFIG
+// ADMIN LOAD
 // ============================================================
 async function loadAdminConfig() {
     try {
         const res = await adminFetch('/api/admin/config');
         const cfg = await res.json();
 
-        // Umum
         document.getElementById('cfg-aiName').value = cfg.aiName || '';
         document.getElementById('cfg-tagline').value = cfg.tagline || '';
         document.getElementById('cfg-logoUrl').value = cfg.logoUrl || '';
         document.getElementById('cfg-logoText').value = cfg.logoText || '';
         document.getElementById('cfg-welcomeMessage').value = cfg.welcomeMessage || '';
-
-        // Kontak
         document.getElementById('cfg-contact-address').value = cfg.contactInfo?.address || '';
         document.getElementById('cfg-contact-phone').value = cfg.contactInfo?.phone || '';
         document.getElementById('cfg-contact-whatsapp').value = cfg.contactInfo?.whatsapp || '';
         document.getElementById('cfg-contact-email').value = cfg.contactInfo?.email || '';
         document.getElementById('cfg-contact-hours').value = cfg.contactInfo?.hours || '';
-
-        // Prompt
         document.getElementById('cfg-systemInstruction').value = cfg.systemInstruction || '';
 
-        // API Keys
+        document.getElementById('memoryEnabled').checked = cfg.memoryEnabled !== false;
+        document.getElementById('memoryMinScore').value = cfg.memoryMinScore || 20;
+        document.getElementById('memorySaveThreshold').value = cfg.memorySaveThreshold || 25;
+
+        const convEnabled = document.getElementById('convEnabled');
+        const convSize = document.getElementById('convSize');
+        if (convEnabled) convEnabled.checked = cfg.conversationHistoryEnabled !== false;
+        if (convSize) convSize.value = cfg.conversationHistorySize || 10;
+
         renderApiKeys(cfg.apiKeys || []);
-
-        // Models
         renderModels(cfg.models || []);
-
-        // Knowledge
         renderKnowledgeFiles(cfg.knowledgeFiles || [], cfg.knowledgeChunks || 0);
-    } catch (err) {
-        alert('Gagal load config: ' + err.message);
-    }
+        document.getElementById('memoryCount').textContent = (cfg.memoryCount || 0) + ' memori';
+
+        const sc = document.getElementById('sessionCount');
+        if (sc) sc.textContent = (cfg.sessionCount || 0) + ' sesi aktif';
+
+        if (cfg.memoryLastUpdate) {
+            document.getElementById('memoryLastUpdate').textContent =
+                'Terakhir update: ' + new Date(cfg.memoryLastUpdate).toLocaleString('id-ID');
+        }
+
+        loadMemoryList();
+    } catch (err) { alert('Gagal load config: ' + err.message); }
 }
 
 function renderApiKeys(keys) {
@@ -298,7 +332,7 @@ function renderApiKeys(keys) {
         el.innerHTML = '<div class="text-muted text-center py-3">Belum ada API key</div>';
         return;
     }
-    let html = '<table class="table table-sm table-hover"><thead><tr><th>#</th><th>Key</th><th>Aksi</th></tr></thead><tbody>';
+    let html = '<div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th>#</th><th>Key</th><th>Aksi</th></tr></thead><tbody>';
     keys.forEach(k => {
         html += `<tr>
             <td>${k.index + 1}</td>
@@ -309,7 +343,7 @@ function renderApiKeys(keys) {
             </td>
         </tr>`;
     });
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     el.innerHTML = html;
 }
 
@@ -318,11 +352,9 @@ async function addApiKey() {
     if (!key) return;
     const status = document.getElementById('addKeyStatus');
     status.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menambahkan...';
-
     try {
         const res = await adminFetch('/api/admin/keys/add', {
-            method: 'POST',
-            body: JSON.stringify({ key })
+            method: 'POST', body: JSON.stringify({ key })
         });
         const data = await res.json();
         if (data.success) {
@@ -341,42 +373,23 @@ async function removeKey(index) {
     if (!confirm('Hapus API key ini?')) return;
     try {
         const res = await adminFetch('/api/admin/keys/remove', {
-            method: 'POST',
-            body: JSON.stringify({ index })
+            method: 'POST', body: JSON.stringify({ index })
         });
         const data = await res.json();
-        if (data.success) loadAdminConfig();
-        else alert(data.message);
-    } catch (err) {
-        alert(err.message);
-    }
+        if (data.success) loadAdminConfig(); else alert(data.message);
+    } catch (err) { alert(err.message); }
 }
 
 async function testKey(index) {
-    const btns = document.querySelectorAll('#apiKeysList button');
-    const btn = btns[index * 2];
-    const original = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-    btn.disabled = true;
-
     try {
         const res = await adminFetch('/api/admin/keys/test', {
-            method: 'POST',
-            body: JSON.stringify({ index })
+            method: 'POST', body: JSON.stringify({ index })
         });
         const data = await res.json();
         alert(data.success ? '✅ ' + data.message : '❌ ' + data.message);
-    } catch (err) {
-        alert('Error: ' + err.message);
-    } finally {
-        btn.innerHTML = original;
-        btn.disabled = false;
-    }
+    } catch (err) { alert('Error: ' + err.message); }
 }
 
-// ============================================================
-// MODELS
-// ============================================================
 let modelList = [];
 
 function renderModels(models) {
@@ -388,44 +401,27 @@ function renderModels(models) {
         div.className = 'input-group mb-2';
         div.innerHTML = `
             <span class="input-group-text">${i + 1}</span>
-            <input type="text" class="form-control" value="${m}" data-index="${i}" onchange="updateModel(${i}, this.value)">
+            <input type="text" class="form-control" value="${m}" onchange="updateModel(${i}, this.value)">
             <button class="btn btn-outline-danger" onclick="removeModel(${i})"><i class="fas fa-trash"></i></button>
         `;
         el.appendChild(div);
     });
 }
 
-function updateModel(i, val) {
-    modelList[i] = val;
-}
-
-function addModel() {
-    modelList.push('gemini-flash-latest');
-    renderModels(modelList);
-}
-
-function removeModel(i) {
-    modelList.splice(i, 1);
-    renderModels(modelList);
-}
+function updateModel(i, val) { modelList[i] = val; }
+function addModel() { modelList.push('gemini-flash-latest'); renderModels(modelList); }
+function removeModel(i) { modelList.splice(i, 1); renderModels(modelList); }
 
 async function saveModels() {
     try {
         const res = await adminFetch('/api/admin/config', {
-            method: 'POST',
-            body: JSON.stringify({ models: modelList })
+            method: 'POST', body: JSON.stringify({ models: modelList })
         });
         const data = await res.json();
-        if (data.success) alert('✅ Model disimpan');
-        else alert('❌ ' + data.message);
-    } catch (err) {
-        alert(err.message);
-    }
+        if (data.success) alert('✅ Model disimpan'); else alert('❌ ' + data.message);
+    } catch (err) { alert(err.message); }
 }
 
-// ============================================================
-// GENERAL CONFIG
-// ============================================================
 async function saveGeneral() {
     const updates = {
         aiName: document.getElementById('cfg-aiName').value.trim(),
@@ -441,42 +437,27 @@ async function saveGeneral() {
             hours: document.getElementById('cfg-contact-hours').value.trim()
         }
     };
-
     try {
         const res = await adminFetch('/api/admin/config', {
-            method: 'POST',
-            body: JSON.stringify(updates)
+            method: 'POST', body: JSON.stringify(updates)
         });
         const data = await res.json();
-        if (data.success) {
-            alert('✅ Pengaturan disimpan');
-            loadPublicConfig();
-        } else {
-            alert('❌ ' + data.message);
-        }
-    } catch (err) {
-        alert(err.message);
-    }
+        if (data.success) { alert('✅ Pengaturan disimpan'); loadPublicConfig(); }
+        else alert('❌ ' + data.message);
+    } catch (err) { alert(err.message); }
 }
 
 async function savePrompt() {
     const systemInstruction = document.getElementById('cfg-systemInstruction').value;
     try {
         const res = await adminFetch('/api/admin/config', {
-            method: 'POST',
-            body: JSON.stringify({ systemInstruction })
+            method: 'POST', body: JSON.stringify({ systemInstruction })
         });
         const data = await res.json();
-        if (data.success) alert('✅ Prompt disimpan');
-        else alert('❌ ' + data.message);
-    } catch (err) {
-        alert(err.message);
-    }
+        if (data.success) alert('✅ Prompt disimpan'); else alert('❌ ' + data.message);
+    } catch (err) { alert(err.message); }
 }
 
-// ============================================================
-// KNOWLEDGE
-// ============================================================
 function renderKnowledgeFiles(files, chunks) {
     const el = document.getElementById('knowledgeFilesList');
     if (files.length === 0) {
@@ -484,7 +465,7 @@ function renderKnowledgeFiles(files, chunks) {
         return;
     }
     let html = `<p class="small text-muted">Total ${chunks} chunk aktif</p>`;
-    html += '<table class="table table-sm"><thead><tr><th>Nama</th><th>Ukuran</th><th>Aksi</th></tr></thead><tbody>';
+    html += '<div class="table-responsive"><table class="table table-sm"><thead><tr><th>Nama</th><th>Ukuran</th><th>Aksi</th></tr></thead><tbody>';
     files.forEach(f => {
         html += `<tr>
             <td>${f.name}</td>
@@ -492,20 +473,17 @@ function renderKnowledgeFiles(files, chunks) {
             <td><button class="btn btn-sm btn-outline-danger" onclick="deleteKnowledge('${f.name}')"><i class="fas fa-trash"></i></button></td>
         </tr>`;
     });
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     el.innerHTML = html;
 }
 
 async function uploadKnowledge() {
     const fileInput = document.getElementById('knowledgeFile');
     if (!fileInput.files[0]) return alert('Pilih file dulu');
-
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
-
     const status = document.getElementById('uploadStatus');
     status.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Mengupload...';
-
     try {
         const res = await fetch('/api/admin/knowledge/upload', {
             method: 'POST',
@@ -530,15 +508,11 @@ async function deleteKnowledge(name) {
     if (!confirm(`Hapus file ${name}?`)) return;
     try {
         const res = await adminFetch('/api/admin/knowledge/delete', {
-            method: 'POST',
-            body: JSON.stringify({ name })
+            method: 'POST', body: JSON.stringify({ name })
         });
         const data = await res.json();
-        if (data.success) loadAdminConfig();
-        else alert(data.message);
-    } catch (err) {
-        alert(err.message);
-    }
+        if (data.success) loadAdminConfig(); else alert(data.message);
+    } catch (err) { alert(err.message); }
 }
 
 async function reloadKnowledge() {
@@ -547,19 +521,113 @@ async function reloadKnowledge() {
         const data = await res.json();
         alert(`✅ Reload selesai. Total ${data.chunks} chunk.`);
         loadAdminConfig();
+    } catch (err) { alert(err.message); }
+}
+
+async function loadMemoryList() {
+    const el = document.getElementById('memoryList');
+    if (!el) return;
+    el.innerHTML = '<div class="text-center py-3"><i class="fas fa-spinner fa-spin"></i></div>';
+    try {
+        const res = await adminFetch('/api/admin/memory');
+        const data = await res.json();
+        if (!data.items || data.items.length === 0) {
+            el.innerHTML = '<div class="text-muted text-center py-3">Belum ada memori.</div>';
+            return;
+        }
+        let html = '';
+        data.items.forEach((m, i) => {
+            const date = new Date(m.timestamp).toLocaleString('id-ID');
+            html += `
+                <div class="memory-item">
+                    <div class="d-flex justify-content-between align-items-start mb-1">
+                        <div class="small text-muted">
+                            <i class="fas fa-clock me-1"></i>${date}
+                            <span class="badge bg-primary ms-2">Hit: ${m.hit}</span>
+                        </div>
+                        <button class="btn btn-sm btn-outline-danger" onclick="deleteMemory(${i})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                    <div class="fw-semibold" style="font-size: 13px;">
+                        <i class="fas fa-question-circle text-primary me-1"></i>${m.question}
+                    </div>
+                    <div class="small text-muted mt-1">${m.answer}</div>
+                </div>
+            `;
+        });
+        el.innerHTML = html;
     } catch (err) {
-        alert(err.message);
+        el.innerHTML = `<div class="alert alert-danger">Gagal load memori: ${err.message}</div>`;
     }
 }
 
-// ============================================================
-// SECURITY
-// ============================================================
+async function deleteMemory(index) {
+    if (!confirm('Hapus memori ini?')) return;
+    try {
+        const res = await adminFetch('/api/admin/memory/delete', {
+            method: 'POST', body: JSON.stringify({ index })
+        });
+        const data = await res.json();
+        if (data.success) { loadMemoryList(); loadAdminConfig(); }
+        else alert(data.message);
+    } catch (err) { alert(err.message); }
+}
+
+async function clearMemory() {
+    if (!confirm('HAPUS SEMUA MEMORI AI?')) return;
+    if (!confirm('Yakin?')) return;
+    try {
+        const res = await adminFetch('/api/admin/memory/clear', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) { alert('✅ Semua memori dihapus'); loadMemoryList(); loadAdminConfig(); }
+        else alert(data.message);
+    } catch (err) { alert(err.message); }
+}
+
+async function reloadMemory() {
+    try {
+        const res = await adminFetch('/api/admin/memory/reload', { method: 'POST' });
+        const data = await res.json();
+        alert(`✅ Reload selesai. Total ${data.total} memori.`);
+        loadMemoryList();
+        loadAdminConfig();
+    } catch (err) { alert(err.message); }
+}
+
+async function saveMemorySettings() {
+    const updates = {
+        memoryEnabled: document.getElementById('memoryEnabled').checked,
+        memoryMinScore: parseInt(document.getElementById('memoryMinScore').value) || 20,
+        memorySaveThreshold: parseInt(document.getElementById('memorySaveThreshold').value) || 25
+    };
+    try {
+        const res = await adminFetch('/api/admin/config', {
+            method: 'POST', body: JSON.stringify(updates)
+        });
+        const data = await res.json();
+        if (data.success) alert('✅ Pengaturan memori disimpan'); else alert('❌ ' + data.message);
+    } catch (err) { alert(err.message); }
+}
+
+async function saveConversationSettings() {
+    const updates = {
+        conversationHistoryEnabled: document.getElementById('convEnabled').checked,
+        conversationHistorySize: parseInt(document.getElementById('convSize').value) || 10
+    };
+    try {
+        const res = await adminFetch('/api/admin/config', {
+            method: 'POST', body: JSON.stringify(updates)
+        });
+        const data = await res.json();
+        if (data.success) alert('✅ Pengaturan konteks disimpan'); else alert('❌ ' + data.message);
+    } catch (err) { alert(err.message); }
+}
+
 async function changePassword() {
     const oldPassword = document.getElementById('oldPassword').value;
     const newPassword = document.getElementById('newPassword').value;
     const status = document.getElementById('passwordStatus');
-
     if (!oldPassword || !newPassword) {
         status.innerHTML = '<span class="text-danger">Isi semua field</span>';
         return;
@@ -568,11 +636,9 @@ async function changePassword() {
         status.innerHTML = '<span class="text-danger">Password minimal 8 karakter</span>';
         return;
     }
-
     try {
         const res = await adminFetch('/api/admin/change-password', {
-            method: 'POST',
-            body: JSON.stringify({ oldPassword, newPassword })
+            method: 'POST', body: JSON.stringify({ oldPassword, newPassword })
         });
         const data = await res.json();
         if (data.success) {
@@ -587,28 +653,8 @@ async function changePassword() {
     }
 }
 
-// ============================================================
-// KEYBOARD SHORTCUT
-// ============================================================
 document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
         if (document.getElementById('loginPage').style.display === 'flex') hideLogin();
     }
 });
-
-// Animasi typing dots
-const style = document.createElement('style');
-style.textContent = `
-  .typing-dots span {
-    display: inline-block; width: 8px; height: 8px; margin: 0 3px;
-    border-radius: 50%; background: #0d47a1;
-    animation: bounce 1.2s infinite ease-in-out both;
-  }
-  .typing-dots span:nth-child(1) { animation-delay: -0.24s; }
-  .typing-dots span:nth-child(2) { animation-delay: -0.12s; }
-  @keyframes bounce {
-    0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
-    40% { transform: scale(1); opacity: 1; }
-  }
-`;
-document.head.appendChild(style);
