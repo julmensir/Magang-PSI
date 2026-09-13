@@ -2,11 +2,13 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>SIVT AI - Sistem Informasi Virtual TEGALREJO</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0d47a1">
 </head>
 <body>
 
@@ -19,27 +21,26 @@
       <div class="tagline" id="headerTagline"><i class="fas fa-robot me-1"></i>Sistem Informasi Virtual TEGALREJO</div>
     </div>
     <div class="header-actions">
-      <button onclick="showLogin()" title="Login Admin"><i class="fas fa-user-shield"></i></button>
+      <button onclick="showLogin()" title="Login Admin"><i class="fas fa-cog"></i></button>
       <button onclick="resetChat()" title="Reset Chat"><i class="fas fa-undo-alt"></i></button>
     </div>
   </div>
   <div class="chat-box" id="chatBox"></div>
   <div class="quick-buttons" id="quickButtons"></div>
-  <div class="chat-input-area">
-    <input type="text" id="chatInput" placeholder="Ketik pertanyaan Anda..."
-           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-           name="chat_message"
-           onkeydown="if(event.key === 'Enter') sendMessage()">
-    <button onclick="sendMessage()"><i class="fas fa-paper-plane"></i></button>
-  </div>
+  <form class="chat-input-area" id="chatForm" onsubmit="event.preventDefault(); sendMessage();">
+    <textarea id="chatInput" placeholder="Ketik pertanyaan Anda..."
+              autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+              name="chat_message" rows="1"></textarea>
+    <button type="submit"><i class="fas fa-paper-plane"></i></button>
+  </form>
 </div>
 
 <!-- LOGIN PAGE -->
 <div id="loginPage">
   <div class="login-card">
     <div class="login-logo">
-      <div class="logo-icon">S</div>
-      <h2>SIVT AI</h2>
+      <div class="logo-icon" id="loginLogo">S</div>
+      <h2 id="loginTitle">SIVT AI</h2>
       <p>Admin Dashboard</p>
     </div>
     <form onsubmit="doLogin(event)">
@@ -64,251 +65,646 @@
 
 <!-- ADMIN PAGE -->
 <div id="adminPage">
-  <div class="admin-header">
-    <h4><i class="fas fa-user-cog"></i> Dashboard Admin</h4>
-    <div class="admin-user">
-      <span class="d-none d-sm-inline"><i class="fas fa-user me-1"></i> <span id="adminUsername">admin</span></span>
-      <button class="btn-logout" onclick="doLogout()">
-        <i class="fas fa-sign-out-alt"></i> <span class="d-none d-sm-inline">Logout</span>
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+  <aside class="admin-sidebar" id="adminSidebar">
+    <div class="sidebar-brand">
+      <div class="brand-logo" id="sidebarLogo">S</div>
+      <div class="brand-text">
+        <div class="brand-name" id="sidebarAiName">SIVT AI</div>
+        <div class="brand-sub">Admin Panel</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section">UTAMA</div>
+      <a class="nav-item active" data-page="dashboard"><i class="fas fa-chart-line"></i><span>Dashboard</span></a>
+      <a class="nav-item" data-page="general"><i class="fas fa-sliders-h"></i><span>Umum</span></a>
+      <a class="nav-item" data-page="logo"><i class="fas fa-image"></i><span>Logo & Branding</span></a>
+      <a class="nav-item" data-page="theme"><i class="fas fa-palette"></i><span>Warna Tema</span></a>
+
+      <div class="nav-section">SISTEM</div>
+      <a class="nav-item" data-page="providers"><i class="fas fa-cloud"></i><span>Provider AI</span><span class="nav-badge" id="badgeProviders">0</span></a>
+      <a class="nav-item" data-page="prompt"><i class="fas fa-comment-dots"></i><span>Prompt AI</span></a>
+
+      <div class="nav-section">DATA</div>
+      <a class="nav-item" data-page="knowledge"><i class="fas fa-book"></i><span>Pengetahuan</span><span class="nav-badge" id="badgeKnowledge">0</span></a>
+      <a class="nav-item" data-page="unanswered"><i class="fas fa-question-circle"></i><span>Tak Terjawab</span><span class="nav-badge nav-badge-warning" id="badgeUnanswered">0</span></a>
+      <a class="nav-item" data-page="memory"><i class="fas fa-brain"></i><span>Memori AI</span><span class="nav-badge" id="badgeMemory">0</span></a>
+      <a class="nav-item" data-page="sessions"><i class="fas fa-comments"></i><span>Percakapan</span><span class="nav-badge" id="badgeSessions">0</span></a>
+
+      <div class="nav-section">PENGATURAN</div>
+      <a class="nav-item" data-page="backup"><i class="fas fa-database"></i><span>Backup</span></a>
+      <a class="nav-item" data-page="security"><i class="fas fa-shield-alt"></i><span>Keamanan</span></a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="admin-info">
+        <i class="fas fa-user-circle"></i>
+        <span id="adminUsername">admin</span>
+      </div>
+      <button class="btn-logout-sidebar" onclick="doLogout()">
+        <i class="fas fa-sign-out-alt"></i> Logout
       </button>
     </div>
-  </div>
+  </aside>
 
-  <div class="admin-content">
-    <ul class="nav nav-tabs admin-tabs" role="tablist">
-      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-general" type="button"><i class="fas fa-cog"></i> <span>Umum</span></button></li>
-      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-keys" type="button"><i class="fas fa-key"></i> <span>API Key</span></button></li>
-      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-models" type="button"><i class="fas fa-robot"></i> <span>Model</span></button></li>
-      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-knowledge" type="button"><i class="fas fa-book"></i> <span>Pengetahuan</span></button></li>
-      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-memory" type="button"><i class="fas fa-brain"></i> <span>Memori AI</span></button></li>
-      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-prompt" type="button"><i class="fas fa-comment-dots"></i> <span>Prompt</span></button></li>
-      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-security" type="button"><i class="fas fa-shield-alt"></i> <span>Keamanan</span></button></li>
-    </ul>
+  <main class="admin-main">
+    <header class="main-header">
+      <button class="btn-toggle-sidebar" onclick="toggleSidebar()">
+        <i class="fas fa-bars"></i>
+      </button>
+      <h2 class="main-title" id="pageTitle">Dashboard</h2>
+      <div class="main-header-right">
+        <button class="btn-icon" onclick="loadCurrentPage()" title="Refresh"><i class="fas fa-sync-alt"></i></button>
+        <button class="btn-icon" onclick="showChat()" title="Ke Chat"><i class="fas fa-comments"></i></button>
 
-    <div class="tab-content pt-3">
-      <!-- TAB UMUM -->
-      <div class="tab-pane fade show active" id="tab-general">
-        <div class="stat-card mb-3">
-          <h6 class="fw-bold mb-3"><i class="fas fa-tag me-2"></i>Identitas AI</h6>
-          <div class="row g-2">
-            <div class="col-md-6">
-              <label class="form-label small">Nama AI</label>
-              <input type="text" class="form-control" id="cfg-aiName">
+        <!-- ✅ NOTIFIKASI DI KANAN ATAS -->
+        <div class="notif-wrapper">
+          <button class="btn-icon notif-bell" onclick="toggleNotifDropdown()" title="Notifikasi">
+            <i class="fas fa-bell"></i>
+            <span class="notif-badge" id="notifBadge" style="display:none;">0</span>
+          </button>
+          <div class="notif-dropdown" id="notifDropdown">
+            <div class="notif-header">
+              <span><i class="fas fa-bell"></i> Notifikasi</span>
+              <div class="notif-header-actions">
+                <button onclick="markAllRead()" title="Tandai semua dibaca"><i class="fas fa-check-double"></i></button>
+                <button onclick="clearNotifications()" title="Hapus semua"><i class="fas fa-trash"></i></button>
+              </div>
             </div>
-            <div class="col-md-6">
-              <label class="form-label small">Tagline</label>
-              <input type="text" class="form-control" id="cfg-tagline">
+            <div class="notif-body" id="notifBody">
+              <div class="notif-empty">Belum ada notifikasi</div>
             </div>
-            <div class="col-md-6">
-              <label class="form-label small">URL Logo (opsional)</label>
-              <input type="text" class="form-control" id="cfg-logoUrl" placeholder="https://...">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small">Logo Teks</label>
-              <input type="text" class="form-control" id="cfg-logoText" maxlength="3">
-            </div>
-            <div class="col-12">
-              <label class="form-label small">Pesan Sambutan</label>
-              <textarea class="form-control" id="cfg-welcomeMessage" rows="3"></textarea>
+            <div class="notif-footer">
+              <a href="#" onclick="showPage('notifications'); toggleNotifDropdown(); return false;">
+                Lihat Semua <i class="fas fa-arrow-right"></i>
+              </a>
             </div>
           </div>
-        </div>
-        <div class="stat-card mb-3">
-          <h6 class="fw-bold mb-3"><i class="fas fa-address-book me-2"></i>Kontak</h6>
-          <div class="row g-2">
-            <div class="col-md-6">
-              <label class="form-label small">Alamat</label>
-              <input type="text" class="form-control" id="cfg-contact-address">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small">Telepon</label>
-              <input type="text" class="form-control" id="cfg-contact-phone">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small">WhatsApp</label>
-              <input type="text" class="form-control" id="cfg-contact-whatsapp">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small">Email</label>
-              <input type="text" class="form-control" id="cfg-contact-email">
-            </div>
-            <div class="col-12">
-              <label class="form-label small">Jam Pelayanan</label>
-              <input type="text" class="form-control" id="cfg-contact-hours">
-            </div>
-          </div>
-        </div>
-        <button class="btn btn-primary w-100 w-md-auto" onclick="saveGeneral()">
-          <i class="fas fa-save me-1"></i> Simpan
-        </button>
-      </div>
-
-      <!-- TAB API KEYS -->
-      <div class="tab-pane fade" id="tab-keys">
-        <div class="stat-card mb-3">
-          <h6 class="fw-bold mb-3"><i class="fas fa-plus me-2"></i>Tambah API Key</h6>
-          <p class="small text-muted">
-            Kalau kuota habis, tambahkan key baru dari
-            <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>.
-          </p>
-          <div class="input-group">
-            <input type="text" class="form-control" id="newApiKey" placeholder="Tempel API key baru...">
-            <button class="btn btn-primary" onclick="addApiKey()"><i class="fas fa-plus"></i></button>
-          </div>
-          <div id="addKeyStatus" class="mt-2 small"></div>
-        </div>
-        <div class="stat-card">
-          <h6 class="fw-bold mb-3"><i class="fas fa-list me-2"></i>Daftar API Key</h6>
-          <div id="apiKeysList"></div>
         </div>
       </div>
+    </header>
 
-      <!-- TAB MODELS -->
-      <div class="tab-pane fade" id="tab-models">
-        <div class="stat-card">
-          <h6 class="fw-bold mb-3"><i class="fas fa-robot me-2"></i>Daftar Model</h6>
-          <p class="small text-muted">Model dicoba dari atas ke bawah.</p>
-          <div id="modelsList"></div>
-          <button class="btn btn-outline-primary btn-sm mt-2" onclick="addModel()">
-            <i class="fas fa-plus"></i> Tambah Model
-          </button>
-          <button class="btn btn-primary btn-sm mt-2 ms-2" onclick="saveModels()">
-            <i class="fas fa-save"></i> Simpan
-          </button>
-        </div>
-      </div>
+    <div class="main-content">
 
-      <!-- TAB KNOWLEDGE -->
-      <div class="tab-pane fade" id="tab-knowledge">
-        <div class="stat-card mb-3">
-          <h6 class="fw-bold mb-3"><i class="fas fa-upload me-2"></i>Upload File Pengetahuan (.md / .txt)</h6>
-          <input type="file" class="form-control mb-2" id="knowledgeFile" accept=".md,.txt">
-          <button class="btn btn-primary btn-sm" onclick="uploadKnowledge()">
-            <i class="fas fa-upload me-1"></i> Upload
-          </button>
-          <button class="btn btn-outline-primary btn-sm ms-2" onclick="reloadKnowledge()">
-            <i class="fas fa-sync me-1"></i> Reload
-          </button>
-          <div id="uploadStatus" class="mt-2 small"></div>
-        </div>
-        <div class="stat-card">
-          <h6 class="fw-bold mb-3"><i class="fas fa-file-alt me-2"></i>File Pengetahuan</h6>
-          <div id="knowledgeFilesList"></div>
-        </div>
-      </div>
-
-      <!-- TAB MEMORY -->
-      <div class="tab-pane fade" id="tab-memory">
-        <div class="stat-card mb-3">
-          <h6 class="fw-bold mb-3"><i class="fas fa-brain me-2"></i>Memori AI</h6>
-          <p class="small text-muted">
-            AI menyimpan pertanyaan & jawaban yang pernah ditanyakan.
-          </p>
-          <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
-            <span class="badge bg-primary" id="memoryCount">0 memori</span>
-            <span class="small text-muted" id="memoryLastUpdate"></span>
+      <!-- PAGE: DASHBOARD -->
+      <div class="page active" id="page-dashboard">
+        <div class="dash-welcome">
+          <div class="dash-welcome-text">
+            <h1>Selamat Datang di <span id="dashAiName">SIVT AI</span> 👋</h1>
+            <p>Dashboard ringkasan semua aktivitas aplikasi Anda</p>
           </div>
-          <div class="form-check form-switch mb-2">
-            <input class="form-check-input" type="checkbox" id="memoryEnabled">
-            <label class="form-check-label small" for="memoryEnabled">Aktifkan memori otomatis</label>
+          <div class="dash-welcome-meta">
+            <div><i class="fas fa-clock"></i> Uptime: <strong id="dashUptime">-</strong></div>
           </div>
-          <div class="row g-2 mb-2">
-            <div class="col-md-6">
-              <label class="form-label small">Min skor pakai memori (20)</label>
-              <input type="number" class="form-control form-control-sm" id="memoryMinScore">
-            </div>
-            <div class="col-md-6">
-              <label class="form-label small">Min skor simpan baru (25)</label>
-              <input type="number" class="form-control form-control-sm" id="memorySaveThreshold">
+        </div>
+
+        <!-- STAT CARDS -->
+        <div class="stat-grid">
+          <div class="stat-card stat-blue">
+            <div class="stat-icon"><i class="fas fa-cloud"></i></div>
+            <div class="stat-info">
+              <div class="stat-value" id="statProviders">0</div>
+              <div class="stat-label">Provider AI</div>
+              <div class="stat-sub" id="statProvidersSub">-</div>
             </div>
           </div>
-          <button class="btn btn-primary btn-sm" onclick="saveMemorySettings()">
-            <i class="fas fa-save me-1"></i> Simpan
-          </button>
-          <button class="btn btn-outline-primary btn-sm ms-2" onclick="reloadMemory()">
-            <i class="fas fa-sync me-1"></i> Reload
-          </button>
-          <button class="btn btn-outline-danger btn-sm ms-2" onclick="clearMemory()">
-            <i class="fas fa-trash me-1"></i> Hapus Semua
-          </button>
+
+          <div class="stat-card stat-green">
+            <div class="stat-icon"><i class="fas fa-book"></i></div>
+            <div class="stat-info">
+              <div class="stat-value" id="statKnowledge">0</div>
+              <div class="stat-label">Chunk Pengetahuan</div>
+              <div class="stat-sub" id="statKnowledgeSub">-</div>
+            </div>
+          </div>
+
+          <div class="stat-card stat-purple">
+            <div class="stat-icon"><i class="fas fa-brain"></i></div>
+            <div class="stat-info">
+              <div class="stat-value" id="statMemory">0</div>
+              <div class="stat-label">Memori AI</div>
+              <div class="stat-sub" id="statMemorySub">-</div>
+            </div>
+          </div>
+
+          <div class="stat-card stat-orange">
+            <div class="stat-icon"><i class="fas fa-comments"></i></div>
+            <div class="stat-info">
+              <div class="stat-value" id="statSessions">0</div>
+              <div class="stat-label">Sesi Aktif</div>
+              <div class="stat-sub" id="statSessionsSub">-</div>
+            </div>
+          </div>
+
+          <div class="stat-card stat-red">
+            <div class="stat-icon"><i class="fas fa-question-circle"></i></div>
+            <div class="stat-info">
+              <div class="stat-value" id="statUnanswered">0</div>
+              <div class="stat-label">Tak Terjawab</div>
+              <div class="stat-sub" id="statUnansweredSub">-</div>
+            </div>
+          </div>
+
+          <div class="stat-card stat-teal">
+            <div class="stat-icon"><i class="fas fa-bell"></i></div>
+            <div class="stat-info">
+              <div class="stat-value" id="statNotif">0</div>
+              <div class="stat-label">Notifikasi</div>
+              <div class="stat-sub" id="statNotifSub">-</div>
+            </div>
+          </div>
         </div>
 
-        <div class="stat-card mb-3">
-          <h6 class="fw-bold mb-3"><i class="fas fa-comments me-2"></i>Konteks Percakapan</h6>
-          <p class="small text-muted">
-            AI ingat percakapan sebelumnya dalam 1 sesi. Cocok untuk pertanyaan lanjutan seperti "terus?", "kalau yang tadi?".
-          </p>
-          <div class="form-check form-switch mb-2">
-            <input class="form-check-input" type="checkbox" id="convEnabled">
-            <label class="form-check-label small" for="convEnabled">Aktifkan konteks percakapan</label>
+        <!-- CHART -->
+        <div class="dash-row">
+          <div class="card">
+            <div class="card-header"><i class="fas fa-chart-bar"></i><span>Aktivitas 7 Hari Terakhir</span></div>
+            <div class="card-body">
+              <div class="chart-wrap" id="chartWrap">
+                <div class="empty-state">Memuat data...</div>
+              </div>
+            </div>
           </div>
-          <div class="mb-2">
-            <label class="form-label small">Jumlah pesan yang diingat (default 10)</label>
-            <input type="number" class="form-control form-control-sm" id="convSize" min="2" max="30">
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="saveConversationSettings()">
-            <i class="fas fa-save me-1"></i> Simpan Pengaturan Konteks
-          </button>
-          <div class="mt-2 small text-muted">
-            <span class="badge bg-info" id="sessionCount">0 sesi aktif</span>
+
+          <div class="card">
+            <div class="card-header"><i class="fas fa-server"></i><span>Status Provider</span></div>
+            <div class="card-body">
+              <div id="providerStatusList"><div class="empty-state">Memuat...</div></div>
+            </div>
           </div>
         </div>
 
-        <div class="stat-card">
-          <h6 class="fw-bold mb-3"><i class="fas fa-list me-2"></i>Daftar Memori</h6>
-          <div id="memoryList">
-            <div class="text-muted text-center py-3">Memuat...</div>
+        <!-- QUICK ACTIONS -->
+        <div class="card">
+          <div class="card-header"><i class="fas fa-bolt"></i><span>Aksi Cepat</span></div>
+          <div class="card-body">
+            <div class="quick-actions">
+              <button class="quick-action-btn" onclick="showPage('providers')">
+                <i class="fas fa-plus-circle"></i><span>Tambah Provider</span>
+              </button>
+              <button class="quick-action-btn" onclick="showPage('knowledge')">
+                <i class="fas fa-upload"></i><span>Upload Pengetahuan</span>
+              </button>
+              <button class="quick-action-btn" onclick="showPage('unanswered')">
+                <i class="fas fa-question-circle"></i><span>Lihat Tak Terjawab</span>
+              </button>
+              <button class="quick-action-btn" onclick="showPage('sessions')">
+                <i class="fas fa-comments"></i><span>Cek Percakapan</span>
+              </button>
+              <button class="quick-action-btn" onclick="runBackupNow()">
+                <i class="fas fa-download"></i><span>Backup Sekarang</span>
+              </button>
+              <button class="quick-action-btn" onclick="showChat()">
+                <i class="fas fa-comment-dots"></i><span>Buka Chat</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- TAB PROMPT -->
-      <div class="tab-pane fade" id="tab-prompt">
-        <div class="stat-card">
-          <h6 class="fw-bold mb-3"><i class="fas fa-comment-dots me-2"></i>System Instruction (Prompt AI)</h6>
-          <p class="small text-muted">Instruksi ini mengatur kepribadian & aturan AI.</p>
-          <textarea class="form-control" id="cfg-systemInstruction" rows="15" style="font-family: monospace; font-size: 12px;"></textarea>
-          <button class="btn btn-primary mt-2" onclick="savePrompt()">
-            <i class="fas fa-save me-1"></i> Simpan Prompt
+      <!-- PAGE: GENERAL -->
+      <div class="page" id="page-general">
+        <div class="card">
+          <div class="card-header"><i class="fas fa-tag"></i><span>Identitas AI</span></div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Nama AI</label>
+                <input type="text" id="cfg-aiName">
+              </div>
+              <div class="form-group">
+                <label>Tagline</label>
+                <input type="text" id="cfg-tagline">
+              </div>
+              <div class="form-group full">
+                <label>Pesan Sambutan</label>
+                <textarea id="cfg-welcomeMessage" rows="3"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><i class="fas fa-address-book"></i><span>Kontak & Info</span></div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="form-group full">
+                <label>Alamat</label>
+                <input type="text" id="cfg-contact-address">
+              </div>
+              <div class="form-group">
+                <label>Telepon</label>
+                <input type="text" id="cfg-contact-phone">
+              </div>
+              <div class="form-group">
+                <label>WhatsApp</label>
+                <input type="text" id="cfg-contact-whatsapp">
+              </div>
+              <div class="form-group">
+                <label>Email</label>
+                <input type="text" id="cfg-contact-email">
+              </div>
+              <div class="form-group">
+                <label>Jam Pelayanan</label>
+                <input type="text" id="cfg-contact-hours">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <button class="btn-primary-lg" onclick="saveGeneral()">
+            <i class="fas fa-save"></i> Simpan Pengaturan
           </button>
         </div>
       </div>
 
-      <!-- TAB SECURITY -->
-      <div class="tab-pane fade" id="tab-security">
-        <div class="stat-card mb-3">
-          <h6 class="fw-bold mb-3"><i class="fas fa-key me-2"></i>Ganti Password Admin</h6>
-          <div class="row g-2">
-            <div class="col-md-6">
-              <label class="form-label small">Password Lama</label>
-              <input type="password" class="form-control" id="oldPassword">
+      <!-- PAGE: LOGO -->
+      <div class="page" id="page-logo">
+        <div class="card">
+          <div class="card-header"><i class="fas fa-image"></i><span>Logo Aplikasi</span></div>
+          <div class="card-body">
+            <p class="text-muted small">Upload sekali, otomatis dipakai di chat header, login, sidebar, favicon.</p>
+            <div class="logo-preview-area">
+              <div class="logo-preview-box" id="logoPreviewBox">
+                <div class="logo-placeholder">
+                  <i class="fas fa-image"></i>
+                  <span>Belum ada logo</span>
+                </div>
+              </div>
+              <div class="logo-upload-info">
+                <h4>Upload Logo</h4>
+                <p>Format: PNG, JPG, GIF, WEBP, SVG. Maksimal 2 MB.</p>
+                <input type="file" id="logoFile" accept="image/*" style="display: none;" onchange="uploadLogo()">
+                <button class="btn-primary-lg" onclick="document.getElementById('logoFile').click()">
+                  <i class="fas fa-upload"></i> Pilih File Logo
+                </button>
+                <button class="btn-danger-outline" onclick="deleteLogo()">
+                  <i class="fas fa-trash"></i> Hapus Logo
+                </button>
+                <div id="logoStatus" class="status-msg"></div>
+              </div>
             </div>
-            <div class="col-md-6">
-              <label class="form-label small">Password Baru (min 8 karakter)</label>
-              <input type="password" class="form-control" id="newPassword">
+
+            <hr style="margin: 24px 0;">
+
+            <div class="form-group">
+              <label>Ukuran Logo</label>
+              <div class="logo-size-options">
+                <label class="logo-size-option"><input type="radio" name="logoSize" value="small" onchange="changeLogoSize('small')"><span>Kecil</span></label>
+                <label class="logo-size-option"><input type="radio" name="logoSize" value="medium" onchange="changeLogoSize('medium')"><span>Sedang</span></label>
+                <label class="logo-size-option"><input type="radio" name="logoSize" value="large" onchange="changeLogoSize('large')"><span>Besar</span></label>
+                <label class="logo-size-option"><input type="radio" name="logoSize" value="xlarge" onchange="changeLogoSize('xlarge')"><span>Extra Besar</span></label>
+              </div>
             </div>
           </div>
-          <button class="btn btn-warning mt-3" onclick="changePassword()">
-            <i class="fas fa-key me-1"></i> Ganti Password
-          </button>
-          <div id="passwordStatus" class="mt-2 small"></div>
-        </div>
-        <div class="stat-card">
-          <h6 class="fw-bold mb-3"><i class="fas fa-info-circle me-2"></i>Info Keamanan</h6>
-          <ul class="small mb-0">
-            <li>Login pakai JWT + bcrypt</li>
-            <li>Rate limit: 30 pesan/menit per IP</li>
-            <li>File .env, keys.json, config.json tidak bisa diakses dari browser</li>
-            <li>Memori AI tersimpan di <code>memory/memory.md</code></li>
-            <li>Sesi percakapan tersimpan di <code>memory/sessions/</code></li>
-          </ul>
         </div>
       </div>
+
+      <!-- PAGE: THEME -->
+      <div class="page" id="page-theme">
+        <div class="card">
+          <div class="card-header"><i class="fas fa-palette"></i><span>Warna Tema Aplikasi</span></div>
+          <div class="card-body">
+            <p class="text-muted">Ubah warna sesuai selera.</p>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Warna Utama (Primary)</label>
+                <div class="color-input-row">
+                  <input type="color" id="theme-primary" oninput="previewTheme()">
+                  <input type="text" id="theme-primary-text" oninput="syncColorFromText('primary')">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Warna Utama Gelap</label>
+                <div class="color-input-row">
+                  <input type="color" id="theme-primaryDark" oninput="previewTheme()">
+                  <input type="text" id="theme-primaryDark-text" oninput="syncColorFromText('primaryDark')">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Warna Aksen</label>
+                <div class="color-input-row">
+                  <input type="color" id="theme-accent" oninput="previewTheme()">
+                  <input type="text" id="theme-accent-text" oninput="syncColorFromText('accent')">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Sidebar Awal</label>
+                <div class="color-input-row">
+                  <input type="color" id="theme-sidebarStart" oninput="previewTheme()">
+                  <input type="text" id="theme-sidebarStart-text" oninput="syncColorFromText('sidebarStart')">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Sidebar Akhir</label>
+                <div class="color-input-row">
+                  <input type="color" id="theme-sidebarEnd" oninput="previewTheme()">
+                  <input type="text" id="theme-sidebarEnd-text" oninput="syncColorFromText('sidebarEnd')">
+                </div>
+              </div>
+            </div>
+
+            <hr style="margin: 20px 0;">
+            <h6 class="fw-bold mb-3">Preset Cepat:</h6>
+            <div class="preset-buttons">
+              <button class="preset-btn" onclick="applyPreset('default')">Biru</button>
+              <button class="preset-btn" onclick="applyPreset('dark')">Dark</button>
+              <button class="preset-btn" onclick="applyPreset('green')">Hijau</button>
+              <button class="preset-btn" onclick="applyPreset('purple')">Ungu</button>
+              <button class="preset-btn" onclick="applyPreset('red')">Merah</button>
+              <button class="preset-btn" onclick="applyPreset('teal')">Teal</button>
+              <button class="preset-btn" onclick="applyPreset('orange')">Orange</button>
+            </div>
+
+            <div class="action-bar mt-4">
+              <button class="btn-primary-lg" onclick="saveTheme()"><i class="fas fa-save"></i> Simpan Tema</button>
+              <button class="btn-secondary" onclick="resetTheme()"><i class="fas fa-undo"></i> Reset</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: PROVIDERS -->
+      <div class="page" id="page-providers">
+        <div class="card">
+          <div class="card-header"><i class="fas fa-plus"></i><span>Tambah Provider AI</span></div>
+          <div class="card-body">
+            <p class="text-muted">Tambah API key dari berbagai provider AI. Sistem otomatis fallback jika salah satu gagal.</p>
+
+            <div class="provider-help">
+              <strong>Cara dapat API key gratis:</strong>
+              <ul>
+                <li><b>Gemini</b>: <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com/app/apikey</a></li>
+                <li><b>Groq</b>: <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a> (14.400 req/hari!)</li>
+                <li><b>OpenRouter</b>: <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></li>
+                <li><b>Cerebras</b>: <a href="https://cloud.cerebras.ai" target="_blank">cloud.cerebras.ai</a></li>
+                <li><b>Together</b>: <a href="https://api.together.xyz" target="_blank">api.together.xyz</a></li>
+                <li><b>Mistral</b>: <a href="https://console.mistral.ai" target="_blank">console.mistral.ai</a></li>
+              </ul>
+            </div>
+
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Provider</label>
+                <select id="newProviderName">
+                  <option value="gemini">Gemini (Google)</option>
+                  <option value="groq">Groq (Llama 3.3 70B)</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="cerebras">Cerebras</option>
+                  <option value="together">Together AI</option>
+                  <option value="mistral">Mistral AI</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>API Key</label>
+                <input type="text" id="newProviderKey" placeholder="Tempel API key...">
+              </div>
+              <div class="form-group full">
+                <label>Models <small>(pisah koma, kosongkan untuk default)</small></label>
+                <input type="text" id="newProviderModels" placeholder="contoh: llama-3.3-70b-versatile,llama-3.1-8b-instant">
+              </div>
+            </div>
+
+            <div class="action-bar">
+              <button class="btn-primary-lg" onclick="addProvider()"><i class="fas fa-plus"></i> Tambah Provider</button>
+            </div>
+            <div id="addProviderStatus" class="status-msg"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><i class="fas fa-list"></i><span>Daftar Provider</span></div>
+          <div class="card-body" id="providersList"></div>
+        </div>
+      </div>
+
+      <!-- PAGE: PROMPT -->
+      <div class="page" id="page-prompt">
+        <div class="card">
+          <div class="card-header"><i class="fas fa-comment-dots"></i><span>System Instruction</span></div>
+          <div class="card-body">
+            <p class="text-muted">Instruksi ini mengatur kepribadian & aturan AI.</p>
+            <textarea id="cfg-systemInstruction" rows="20" class="prompt-textarea"></textarea>
+            <button class="btn-primary-lg" onclick="savePrompt()"><i class="fas fa-save"></i> Simpan Prompt</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: KNOWLEDGE -->
+      <div class="page" id="page-knowledge">
+        <div class="card">
+          <div class="card-header"><i class="fas fa-upload"></i><span>Upload File Pengetahuan</span></div>
+          <div class="card-body">
+            <p class="text-muted">Format: <b>.md</b> atau <b>.txt</b>.</p>
+            <input type="file" id="knowledgeFile" accept=".md,.txt" class="form-input">
+            <div class="action-bar">
+              <button class="btn-primary-lg" onclick="uploadKnowledge()"><i class="fas fa-upload"></i> Upload</button>
+              <button class="btn-secondary" onclick="reloadKnowledge()"><i class="fas fa-sync"></i> Reload</button>
+            </div>
+            <div id="uploadStatus" class="status-msg"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><i class="fas fa-file-alt"></i><span>File Pengetahuan</span></div>
+          <div class="card-body" id="knowledgeFilesList"></div>
+        </div>
+      </div>
+
+      <!-- PAGE: UNANSWERED -->
+      <div class="page" id="page-unanswered">
+        <div class="card">
+          <div class="card-header"><i class="fas fa-question-circle"></i><span>Pertanyaan Yang Tidak Terjawab AI</span></div>
+          <div class="card-body">
+            <p class="text-muted">Daftar pertanyaan warga yang tidak bisa dijawab AI karena tidak ada di buku pengetahuan. Tambahkan jawabannya supaya AI bisa menjawab ke depannya.</p>
+
+            <div class="filter-tabs">
+              <button class="filter-tab active" data-filter="pending" onclick="filterUnanswered('pending')">
+                <i class="fas fa-hourglass-half"></i> Belum Dijawab <span id="filterPendingCount" class="filter-count">0</span>
+              </button>
+              <button class="filter-tab" data-filter="resolved" onclick="filterUnanswered('resolved')">
+                <i class="fas fa-check-circle"></i> Sudah Dijawab <span id="filterResolvedCount" class="filter-count">0</span>
+              </button>
+              <button class="filter-tab" data-filter="all" onclick="filterUnanswered('all')">
+                <i class="fas fa-list"></i> Semua <span id="filterAllCount" class="filter-count">0</span>
+              </button>
+            </div>
+
+            <div class="action-bar">
+              <button class="btn-secondary" onclick="loadUnanswered()"><i class="fas fa-sync"></i> Refresh</button>
+              <button class="btn-danger-outline" onclick="clearResolvedUnanswered()"><i class="fas fa-broom"></i> Hapus Yang Sudah Dijawab</button>
+            </div>
+
+            <div id="unansweredList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: MEMORY -->
+      <div class="page" id="page-memory">
+        <div class="card">
+          <div class="card-header"><i class="fas fa-brain"></i><span>Pengaturan Memori</span></div>
+          <div class="card-body">
+            <div class="switch-row">
+              <label class="switch"><input type="checkbox" id="memoryEnabled"><span class="slider"></span></label>
+              <span>Aktifkan memori otomatis</span>
+            </div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label>Min skor pakai memori <small>(default 40)</small></label>
+                <input type="number" id="memoryMinScore">
+              </div>
+              <div class="form-group">
+                <label>Min skor simpan baru <small>(default 30)</small></label>
+                <input type="number" id="memorySaveThreshold">
+              </div>
+            </div>
+            <div class="action-bar">
+              <button class="btn-primary-lg" onclick="saveMemorySettings()"><i class="fas fa-save"></i> Simpan</button>
+              <button class="btn-secondary" onclick="reloadMemory()"><i class="fas fa-sync"></i> Reload</button>
+              <button class="btn-danger-outline" onclick="clearMemory()"><i class="fas fa-trash"></i> Hapus Semua</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><i class="fas fa-comments"></i><span>Konteks Percakapan</span></div>
+          <div class="card-body">
+            <div class="switch-row">
+              <label class="switch"><input type="checkbox" id="convEnabled"><span class="slider"></span></label>
+              <span>Aktifkan konteks percakapan</span>
+            </div>
+            <div class="form-grid">
+              <div class="form-group"><label>Jumlah pesan diingat</label><input type="number" id="convSize" min="2" max="30"></div>
+              <div class="form-group"><label>Rate limit per-sesi (pesan/menit)</label><input type="number" id="rateLimitPerSession" min="5" max="100"></div>
+            </div>
+            <button class="btn-primary-lg" onclick="saveConversationSettings()"><i class="fas fa-save"></i> Simpan</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><i class="fas fa-list"></i><span>Daftar Memori</span></div>
+          <div class="card-body" id="memoryList"></div>
+        </div>
+      </div>
+
+      <!-- PAGE: SESSIONS -->
+      <div class="page" id="page-sessions">
+        <div class="card">
+          <div class="card-header"><i class="fas fa-comments"></i><span>Percakapan Aktif</span></div>
+          <div class="card-body">
+            <p class="text-muted">Sesi percakapan (2 jam terakhir).</p>
+            <div class="action-bar">
+              <button class="btn-secondary" onclick="loadSessions()"><i class="fas fa-sync"></i> Refresh</button>
+              <button class="btn-danger-outline" onclick="clearSessions()"><i class="fas fa-trash"></i> Hapus Semua</button>
+            </div>
+            <div id="sessionsList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: NOTIFICATIONS -->
+      <div class="page" id="page-notifications">
+        <div class="card">
+          <div class="card-header"><i class="fas fa-bell"></i><span>Notifikasi Sistem</span></div>
+          <div class="card-body">
+            <div class="action-bar">
+              <button class="btn-secondary" onclick="loadNotifications()"><i class="fas fa-sync"></i> Refresh</button>
+              <button class="btn-primary" onclick="markAllRead()"><i class="fas fa-check"></i> Tandai Dibaca</button>
+              <button class="btn-danger-outline" onclick="clearNotifications()"><i class="fas fa-trash"></i> Hapus</button>
+            </div>
+            <div id="notificationsList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: BACKUP -->
+      <div class="page" id="page-backup">
+        <div class="card">
+          <div class="card-header"><i class="fas fa-database"></i><span>Backup Otomatis</span></div>
+          <div class="card-body">
+            <p class="text-muted">Backup otomatis setiap hari jam 02.00. File dienkripsi AES-256.</p>
+            <div class="action-bar">
+              <button class="btn-primary-lg" onclick="runBackupNow()"><i class="fas fa-download"></i> Backup Sekarang</button>
+              <button class="btn-secondary" onclick="loadBackups()"><i class="fas fa-list"></i> Lihat Daftar</button>
+            </div>
+            <div id="backupsList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAGE: SECURITY -->
+      <div class="page" id="page-security">
+        <div class="card">
+          <div class="card-header"><i class="fas fa-key"></i><span>Ganti Password Admin</span></div>
+          <div class="card-body">
+            <div class="form-grid">
+              <div class="form-group"><label>Password Lama</label><input type="password" id="oldPassword"></div>
+              <div class="form-group"><label>Password Baru (min 8 karakter)</label><input type="password" id="newPassword"></div>
+            </div>
+            <button class="btn-primary-lg" onclick="changePassword()"><i class="fas fa-key"></i> Ganti Password</button>
+            <div id="passwordStatus" class="status-msg"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><i class="fas fa-info-circle"></i><span>Info Keamanan</span></div>
+          <div class="card-body">
+            <ul class="info-list">
+              <li><i class="fas fa-check-circle text-success"></i> Login pakai JWT (30 hari) + bcrypt</li>
+              <li><i class="fas fa-check-circle text-success"></i> Sesi login tersimpan</li>
+              <li><i class="fas fa-check-circle text-success"></i> API key terenkripsi AES-256-GCM</li>
+              <li><i class="fas fa-check-circle text-success"></i> Backup dienkripsi AES-256</li>
+              <li><i class="fas fa-check-circle text-success"></i> Multi-provider dengan fallback otomatis</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- MODAL: TAMBAH JAWABAN KE PENGETAHUAN -->
+<div class="modal-overlay" id="answerModal" onclick="closeAnswerModal(event)">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3><i class="fas fa-plus-circle"></i> Tambahkan Jawaban ke Pengetahuan</h3>
+      <button class="modal-close" onclick="closeAnswerModal()"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Pertanyaan Warga</label>
+        <input type="text" id="modal-question" readonly>
+      </div>
+      <div class="form-group">
+        <label>Kategori <small>(opsional)</small></label>
+        <input type="text" id="modal-category" placeholder="contoh: Administrasi Kependudukan">
+      </div>
+      <div class="form-group">
+        <label>Jawaban Lengkap <span class="text-danger">*</span></label>
+        <textarea id="modal-answer" rows="8" placeholder="Tulis jawaban lengkap untuk pertanyaan ini..."></textarea>
+      </div>
+      <input type="hidden" id="modal-id">
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeAnswerModal()">Batal</button>
+      <button class="btn-primary-lg" onclick="submitAnswerToKnowledge()">
+        <i class="fas fa-save"></i> Simpan ke Pengetahuan
+      </button>
     </div>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="script.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('[PWA] SW terdaftar:', reg.scope))
+            .catch(err => console.warn('[PWA] SW gagal:', err));
+    });
+}
+</script>
 </body>
 </html>

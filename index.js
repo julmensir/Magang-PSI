@@ -3,16 +3,25 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import multer from 'multer';
 import rateLimit from 'express-rate-limit';
+import { ipKeyGenerator } from 'express-rate-limit';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import cookieParser from 'cookie-parser';
+import cron from 'node-cron';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI } from '@google/genai';
+import { createRequire } from 'module';
+
+import { PROVIDERS, callWithFallback, callGemini, callOpenAICompatible } from './lib/providers.js';
+import { tokenize, memorySearch, memoryAdd, validateMemoryRelevance, makeBigrams, stemID } from './lib/memory.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const require = createRequire(import.meta.url);
+const AdmZip = require('adm-zip');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -22,23 +31,106 @@ app.set('trust proxy', 1);
 // ============================================================
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET || JWT_SECRET.length < 32) {
-    console.error('FATAL: JWT_SECRET tidak ada atau terlalu pendek di .env');
+    console.error('FATAL: JWT_SECRET tidak ada atau terlalu pendek');
     process.exit(1);
 }
 
+const ENCRYPTION_KEY_HEX = process.env.ENCRYPTION_KEY;
+if (!ENCRYPTION_KEY_HEX || ENCRYPTION_KEY_HEX.length !== 64) {
+    console.error('FATAL: ENCRYPTION_KEY harus 64 karakter hex');
+    process.exit(1);
+}
+const ENCRYPTION_KEY = Buffer.from(ENCRYPTION_KEY_HEX, 'hex');
+
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
-const ADMIN_PASSWORD_HASH = bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'admin123', 10);
+
+let ADMIN_PASSWORD_HASH;
+if (process.env.ADMIN_PASSWORD_HASH && process.env.ADMIN_PASSWORD_HASH.startsWith('$2')) {
+    ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH;
+} else if (process.env.ADMIN_PASSWORD) {
+    ADMIN_PASSWORD_HASH = bcrypt.hashSync(process.env.ADMIN_PASSWORD, 10);
+} else {
+    console.warn('[SECURITY] Tidak ada password di .env. Pakai default admin123');
+    ADMIN_PASSWORD_HASH = bcrypt.hashSync('admin123', 10);
+}
+
+// ============================================================
+// ENKRIPSI
+// ============================================================
+function encryptData(plainText) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+    const encrypted = Buffer.concat([cipher.update(plainText, 'utf8'), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
+}
+
+function decryptData(cipherText) {
+    try {
+        const parts = cipherText.split(':');
+        if (parts.length !== 3) throw new Error('Format cipher tidak valid');
+        const iv = Buffer.from(parts[0], 'hex');
+        const authTag = Buffer.from(parts[1], 'hex');
+        const encrypted = Buffer.from(parts[2], 'hex');
+        const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+        decipher.setAuthTag(authTag);
+        const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+        return decrypted.toString('utf8');
+    } catch (e) {
+        console.error('[ENCRYPT] Gagal decrypt:', e.message);
+        return null;
+    }
+}
+
+function isEncryptedFormat(content) {
+    return /^[0-9a-f]+:[0-9a-f]+:[0-9a-f]+$/i.test(content.trim());
+}
+
+function encryptBuffer(buffer) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+    const encrypted = Buffer.concat([cipher.update(buffer), cipher.final()]);
+    const authTag = cipher.getAuthTag();
+    const magic = Buffer.from('SIVTBK01');
+    return Buffer.concat([magic, iv, authTag, encrypted]);
+}
+
+// ============================================================
+// BERSIHKAN FORMAT MARKDOWN DARI AI
+// ============================================================
+function cleanAIText(text) {
+    if (!text) return '';
+
+    let clean = text;
+
+    clean = clean.replace(/\*\*(.+?)\*\*/g, '$1');
+    clean = clean.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '$1');
+    clean = clean.replace(/^#{1,6}\s+/gm, '');
+    clean = clean.replace(/`([^`]+)`/g, '$1');
+    clean = clean.replace(/^\s*[-*]\s+/gm, '• ');
+    clean = clean.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
+    clean = clean.replace(/\n{3,}/g, '\n\n');
+    clean = clean.replace(/[ \t]+$/gm, '');
+
+    return clean.trim();
+}
 
 // ============================================================
 // PATH
 // ============================================================
 const PATHS = {
-    config: path.join(__dirname, 'config.json'),
-    keys: path.join(__dirname, 'keys.json'),
+    dataDir: path.join(__dirname, 'data'),
+    config: path.join(__dirname, 'data', 'config.json'),
+    keys: path.join(__dirname, 'data', 'keys.json.enc'),
+    providers: path.join(__dirname, 'data', 'providers.json.enc'),
+    keysLegacy: path.join(__dirname, 'keys.json'),
+    unanswered: path.join(__dirname, 'data', 'unanswered.json'),
     knowledge: path.join(__dirname, 'knowledge'),
-    memoryDir: path.join(__dirname, 'memory'),
     memoryFile: path.join(__dirname, 'memory', 'memory.md'),
     sessionsDir: path.join(__dirname, 'memory', 'sessions'),
+    backupsDir: path.join(__dirname, 'data', 'backups'),
+    logsDir: path.join(__dirname, 'logs'),
+    uploadsDir: path.join(__dirname, 'public', 'uploads'),
     tmp: path.join(__dirname, 'tmp')
 };
 
@@ -48,12 +140,95 @@ Object.values(PATHS).forEach(p => {
 });
 
 // ============================================================
+// NOTIFIKASI
+// ============================================================
+const NOTIF_FILE = path.join(PATHS.logsDir, 'notifications.json');
+let notifications = [];
+
+function notifInit() {
+    if (fs.existsSync(NOTIF_FILE)) {
+        try { notifications = JSON.parse(fs.readFileSync(NOTIF_FILE, 'utf-8')); } catch { notifications = []; }
+    }
+}
+function notifSave() {
+    fs.writeFileSync(NOTIF_FILE, JSON.stringify(notifications.slice(-100), null, 2), 'utf-8');
+}
+function notifAdd(type, title, message, level = 'warning') {
+    const notif = {
+        id: 'notif_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        type, title, message, level,
+        timestamp: new Date().toISOString(),
+        read: false
+    };
+    notifications.push(notif);
+    if (notifications.length > 100) notifications = notifications.slice(-100);
+    notifSave();
+    console.log(`[NOTIF] ${level.toUpperCase()}: ${title}`);
+}
+const notifThrottle = {};
+function notifAddThrottled(key, type, title, message, level = 'warning', cooldownMs = 5 * 60 * 1000) {
+    const now = Date.now();
+    if (notifThrottle[key] && (now - notifThrottle[key]) < cooldownMs) return;
+    notifThrottle[key] = now;
+    notifAdd(type, title, message, level);
+}
+notifInit();
+
+// ============================================================
+// UNANSWERED QUESTIONS (Pertanyaan yang tidak bisa dijawab AI)
+// ============================================================
+let unansweredQuestions = [];
+
+function unansweredInit() {
+    if (fs.existsSync(PATHS.unanswered)) {
+        try { unansweredQuestions = JSON.parse(fs.readFileSync(PATHS.unanswered, 'utf-8')); } catch { unansweredQuestions = []; }
+    }
+}
+
+function unansweredSave() {
+    fs.writeFileSync(PATHS.unanswered, JSON.stringify(unansweredQuestions.slice(-500), null, 2), 'utf-8');
+}
+
+function unansweredAdd(question, sessionId) {
+    const qNorm = question.toLowerCase().trim();
+
+    // Cek duplikat dalam 24 jam terakhir
+    const recent = unansweredQuestions.find(u =>
+        u.question.toLowerCase().trim() === qNorm &&
+        (Date.now() - new Date(u.lastAsked).getTime()) < 24 * 60 * 60 * 1000
+    );
+
+    if (recent) {
+        recent.count = (recent.count || 1) + 1;
+        recent.lastAsked = new Date().toISOString();
+        unansweredSave();
+        return recent;
+    }
+
+    const item = {
+        id: 'uq_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        question: question.trim(),
+        sessionId: sessionId || 'unknown',
+        count: 1,
+        firstAsked: new Date().toISOString(),
+        lastAsked: new Date().toISOString(),
+        resolved: false
+    };
+    unansweredQuestions.push(item);
+    unansweredSave();
+    console.log(`[UNANSWERED] "${question.slice(0, 60)}"`);
+    return item;
+}
+
+unansweredInit();
+
+// ============================================================
 // SESSION STORE
 // ============================================================
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 const MAX_SESSION_MESSAGES = 30;
-
 let sessions = {};
+let saveTimers = {};
 
 function sessionInit() {
     if (fs.existsSync(PATHS.sessionsDir)) {
@@ -68,22 +243,24 @@ function sessionInit() {
                     }
                     sessions[data.id] = data;
                 }
-            } catch (e) {
-                console.error(`[SESSION] Gagal load ${file}:`, e.message);
-            }
+            } catch (e) {}
         }
-        console.log(`[SESSION] ${Object.keys(sessions).length} sesi dimuat dari disk.`);
+        console.log(`[SESSION] ${Object.keys(sessions).length} sesi dimuat.`);
     }
 }
 
-function sessionSave(sessionId) {
-    if (!sessions[sessionId]) return;
-    try {
-        const file = path.join(PATHS.sessionsDir, `${sessionId}.json`);
-        fs.writeFileSync(file, JSON.stringify(sessions[sessionId]), 'utf-8');
-    } catch (e) {
-        console.error(`[SESSION] Gagal simpan ${sessionId}:`, e.message);
-    }
+function sessionSaveDebounced(sessionId) {
+    if (saveTimers[sessionId]) clearTimeout(saveTimers[sessionId]);
+    saveTimers[sessionId] = setTimeout(() => {
+        if (!sessions[sessionId]) return;
+        try {
+            fs.writeFileSync(
+                path.join(PATHS.sessionsDir, `${sessionId}.json`),
+                JSON.stringify(sessions[sessionId]), 'utf-8'
+            );
+        } catch (_) {}
+        delete saveTimers[sessionId];
+    }, 1500);
 }
 
 function sessionGetOrCreate(sessionId) {
@@ -95,10 +272,9 @@ function sessionGetOrCreate(sessionId) {
             id: sessionId,
             createdAt: Date.now(),
             lastActivity: Date.now(),
-            messages: [],
-            summary: ''
+            messages: []
         };
-        console.log(`[SESSION] Sesi baru: ${sessionId}`);
+        console.log(`[SESSION] Baru: ${sessionId}`);
     }
     sessions[sessionId].lastActivity = Date.now();
     return sessions[sessionId];
@@ -107,15 +283,11 @@ function sessionGetOrCreate(sessionId) {
 function sessionAddMessage(sessionId, role, text) {
     const session = sessions[sessionId];
     if (!session) return;
-    session.messages.push({
-        role,
-        text: text.slice(0, 2000),
-        ts: Date.now()
-    });
+    session.messages.push({ role, text: text.slice(0, 2000), ts: Date.now() });
     if (session.messages.length > MAX_SESSION_MESSAGES) {
         session.messages = session.messages.slice(-MAX_SESSION_MESSAGES);
     }
-    sessionSave(sessionId);
+    sessionSaveDebounced(sessionId);
 }
 
 function sessionCleanup() {
@@ -125,137 +297,84 @@ function sessionCleanup() {
         if (now - sessions[id].lastActivity > SESSION_TTL_MS) {
             delete sessions[id];
             try {
-                const file = path.join(PATHS.sessionsDir, `${id}.json`);
-                if (fs.existsSync(file)) fs.unlinkSync(file);
+                const f = path.join(PATHS.sessionsDir, `${id}.json`);
+                if (fs.existsSync(f)) fs.unlinkSync(f);
             } catch (_) {}
             cleaned++;
         }
     }
-    if (cleaned > 0) console.log(`[SESSION] Cleanup: ${cleaned} sesi lama dihapus.`);
+    if (cleaned > 0) console.log(`[SESSION] Cleanup: ${cleaned} dihapus.`);
 }
-
 setInterval(sessionCleanup, 30 * 60 * 1000);
 
+process.on('SIGINT', () => {
+    console.log('\n[SERVER] Menyimpan sesi...');
+    for (const id of Object.keys(sessions)) {
+        if (saveTimers[id]) clearTimeout(saveTimers[id]);
+        try {
+            fs.writeFileSync(
+                path.join(PATHS.sessionsDir, `${id}.json`),
+                JSON.stringify(sessions[id]), 'utf-8'
+            );
+        } catch (_) {}
+    }
+    process.exit(0);
+});
+
 // ============================================================
-// CONFIG
+// MULTI-PROVIDER API KEY MANAGER
 // ============================================================
-const DEFAULT_CONFIG = {
-    aiName: 'SIVT AI',
-    tagline: 'Sistem Informasi Virtual TEGALREJO',
-    logoUrl: '',
-    logoText: 'S',
-    welcomeMessage:
-        'Halo! Saya SIVT AI, asisten virtual Kemantren Tegalrejo.\nTanya apa saja tentang layanan administrasi, persyaratan, jadwal, dan info lainnya. Saya siap bantu 24 jam!',
-    systemInstruction: `Kamu adalah SIVT AI, asisten virtual resmi Kemantren Tegalrejo, Yogyakarta.
+let PROVIDERS_CONFIG = loadProviders();
 
-Gaya bicara: santai, gaul, ramah. Gunakan "nih, dong, yuk, gimana, sip" secukupnya.
-Jawab SINGKAT, PADAT, LANGSUNG KE INTI. Maksimal 3 paragraf pendek.
-Jangan pakai tanda bintang dua (**).
-
-=== ATURAN UTAMA ===
-
-1. KONTEKS PERCAKAPAN: Kamu akan menerima riwayat percakapan sebelumnya. BACA dengan teliti apa yang sedang dibahas. Kalau user bertanya lanjutan ("terus?", "kalau yang tadi?", "yang satunya?"), jawab berdasarkan topik yang SEDANG DIBICARAKAN, bukan topik baru.
-
-2. JAWAB BERDASARKAN "KONTEKS BUKU PENGETAHUAN" yang diberikan. Kalau ada di konteks, sebutkan SEMUA poin penting. Kalau daftar bernomor, tulis ulang rapi.
-
-3. Kalau pertanyaan TIDAK ADA di konteks, jawab jujur dan singkat.
-
-4. Kalau pertanyaan ambigu atau singkat banget ("iya", "terus", "gimana"), lihat riwayat percakapan untuk tahu maksudnya.
-
-=== CONTOH SITUASI ===
-
-User: "syarat bikin KK?"
-AI: [jawab daftar syarat KK]
-User: "kalau yang hilang?"
-AI: [harusnya jawab SYARAT KK HILANG, bukan KTP hilang, karena topiknya KK]
-
-User: "jam buka kemantren?"
-AI: [jawab jam buka]
-User: "kalau sabtu?"
-AI: [harusnya jawab jam Sabtu — karena topiknya jam buka]
-
-=== DILARANG ===
-- Mengarang persyaratan, nomor telepon, atau alamat
-- Memberi jawaban di luar konteks
-- Lupa topik yang sedang dibahas
-
-Info umum:
-- Alamat: Jl. Tegalrejo No.1, Yogyakarta
-- Jam: Senin-Jumat 08.00-15.00, Sabtu 08.00-12.00 WIB
-- Telepon: (0274) 123456`,
-    models: [
-        'gemini-3.6-flash',
-        'gemini-3.8-flash',
-        'gemini-flash-latest'
-    ],
-    generationConfig: {
-        temperature: 0.2,
-        topP: 0.85,
-        topK: 30,
-        maxOutputTokens: 1200
-    },
-    contactInfo: {
-        address: 'Jl. Tegalrejo No.1, Yogyakarta',
-        phone: '(0274) 123456',
-        whatsapp: '0812-3456-7890',
-        email: 'kemantren.tegalrejo@jogjakota.go.id',
-        hours: 'Senin-Jumat 08.00-15.00, Sabtu 08.00-12.00'
-    },
-    quickButtons: [
-        { label: 'Syarat KK', question: 'Syarat membuat KK baru' },
-        { label: 'KTP Hilang', question: 'Syarat KTP hilang' },
-        { label: 'Jam Pelayanan', question: 'Jam pelayanan Kemantren' },
-        { label: 'Alamat', question: 'Alamat Kemantren Tegalrejo' }
-    ],
-    memoryEnabled: true,
-    memoryMinScore: 20,
-    memorySaveThreshold: 25,
-    conversationHistoryEnabled: true,
-    conversationHistorySize: 10
-};
-
-function loadConfig() {
-    if (!fs.existsSync(PATHS.config)) {
-        fs.writeFileSync(PATHS.config, JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf-8');
-        return { ...DEFAULT_CONFIG };
+function loadProviders() {
+    if (!fs.existsSync(PATHS.providers)) {
+        if (fs.existsSync(PATHS.keys)) {
+            try {
+                const raw = fs.readFileSync(PATHS.keys, 'utf-8').trim();
+                const keys = isEncryptedFormat(raw) ? JSON.parse(decryptData(raw)) : JSON.parse(raw);
+                const migrated = [];
+                for (const k of keys) {
+                    migrated.push({
+                        name: 'gemini',
+                        apiKey: k,
+                        models: PROVIDERS.gemini.models,
+                        enabled: true
+                    });
+                }
+                fs.writeFileSync(PATHS.providers, encryptData(JSON.stringify(migrated)), 'utf-8');
+                console.log(`[PROVIDERS] Migrasi ${keys.length} Gemini key ke format baru.`);
+                return migrated;
+            } catch (e) {
+                console.error('[PROVIDERS] Gagal migrasi:', e.message);
+            }
+        }
+        return [];
     }
     try {
-        return { ...DEFAULT_CONFIG, ...JSON.parse(fs.readFileSync(PATHS.config, 'utf-8')) };
-    } catch {
-        return { ...DEFAULT_CONFIG };
+        const raw = fs.readFileSync(PATHS.providers, 'utf-8').trim();
+        if (!isEncryptedFormat(raw)) return [];
+        const plain = decryptData(raw);
+        if (!plain) return [];
+        const parsed = JSON.parse(plain);
+        return parsed.map(p => ({
+            ...p,
+            enabled: p.enabled !== false,
+            models: Array.isArray(p.models) && p.models.length > 0
+                ? p.models
+                : (PROVIDERS[p.name]?.models || [])
+        }));
+    } catch (e) {
+        console.error('[PROVIDERS] Gagal load:', e.message);
+        return [];
     }
 }
 
-function saveConfig() {
-    fs.writeFileSync(PATHS.config, JSON.stringify(CONFIG, null, 2), 'utf-8');
-}
-
-let CONFIG = loadConfig();
-
-// ============================================================
-// API KEYS
-// ============================================================
-function loadKeys() {
-    if (!fs.existsSync(PATHS.keys)) {
-        const envKeys = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '')
-            .split(',').map(k => k.trim()).filter(Boolean);
-        fs.writeFileSync(PATHS.keys, JSON.stringify(envKeys, null, 2), 'utf-8');
-        return envKeys;
+function saveProviders() {
+    try {
+        fs.writeFileSync(PATHS.providers, encryptData(JSON.stringify(PROVIDERS_CONFIG)), 'utf-8');
+    } catch (e) {
+        console.error('[PROVIDERS] Gagal simpan:', e.message);
     }
-    try { return JSON.parse(fs.readFileSync(PATHS.keys, 'utf-8')); }
-    catch { return []; }
-}
-
-function saveKeys(keys) {
-    fs.writeFileSync(PATHS.keys, JSON.stringify(keys, null, 2), 'utf-8');
-}
-
-let API_KEYS = loadKeys();
-let clients = API_KEYS.map(k => new GoogleGenAI({ apiKey: k }));
-
-function rebuildClients() {
-    API_KEYS = loadKeys();
-    clients = API_KEYS.map(k => new GoogleGenAI({ apiKey: k }));
 }
 
 // ============================================================
@@ -265,9 +384,8 @@ let memoryItems = [];
 
 function memoryInit() {
     if (!fs.existsSync(PATHS.memoryFile)) {
-        const header = `# Memori SIVT AI\n\nFile ini berisi catatan pertanyaan & jawaban yang pernah ditanyakan pengguna.\n\nTotal memori: 0\nTerakhir diperbarui: ${new Date().toISOString()}\n\n---\n\n`;
+        const header = `# Memori SIVT AI\n\nTotal memori: 0\nTerakhir diperbarui: ${new Date().toISOString()}\n\n---\n\n`;
         fs.writeFileSync(PATHS.memoryFile, header, 'utf-8');
-        console.log('[MEMORY] File memory.md dibuat.');
     }
     memoryLoad();
 }
@@ -282,190 +400,45 @@ function memoryLoad() {
             const lines = block.split('\n');
             const headerMatch = lines[0].match(/\[(.+?)\]\s*(.+)/);
             if (!headerMatch) continue;
-            const timestamp = headerMatch[1];
-            const title = headerMatch[2].trim();
             const getField = (name) => {
                 const line = lines.find(l => l.startsWith(`**${name}:**`));
-                if (!line) return '';
-                return line.replace(`**${name}:**`, '').trim();
+                return line ? line.replace(`**${name}:**`, '').trim() : '';
             };
             memoryItems.push({
-                timestamp,
-                title,
+                timestamp: headerMatch[1],
+                title: headerMatch[2].trim(),
                 question: getField('Pertanyaan'),
                 variants: getField('Variasi').split(',').map(s => s.trim()).filter(Boolean),
                 answer: getField('Jawaban'),
                 hit: parseInt(getField('Hit')) || 0,
                 keywords: getField('Kata kunci').split(',').map(s => s.trim()).filter(Boolean)
             });
-        } catch (e) {
-            console.error('[MEMORY] Gagal parse blok:', e.message);
-        }
+        } catch (e) {}
     }
     console.log(`[MEMORY] ${memoryItems.length} memori dimuat.`);
 }
 
 function memorySave() {
     const lines = [
-        '# Memori SIVT AI',
-        '',
-        'File ini berisi catatan pertanyaan & jawaban yang pernah ditanyakan pengguna.',
-        '',
+        '# Memori SIVT AI', '',
         `Total memori: ${memoryItems.length}`,
         `Terakhir diperbarui: ${new Date().toISOString()}`,
-        '',
-        '---',
-        ''
+        '', '---', ''
     ];
     for (const m of memoryItems) {
         lines.push(`## [${m.timestamp}] ${m.title}`);
         lines.push(`**Pertanyaan:** ${m.question}`);
-        lines.push(`**Variasi:** ${m.variants.join(', ')}`);
+        lines.push(`**Variasi:** ${(m.variants || []).join(', ')}`);
         lines.push(`**Jawaban:** ${m.answer}`);
         lines.push(`**Hit:** ${m.hit}`);
-        lines.push(`**Kata kunci:** ${m.keywords.join(', ')}`);
+        lines.push(`**Kata kunci:** ${(m.keywords || []).join(', ')}`);
         lines.push('');
     }
     fs.writeFileSync(PATHS.memoryFile, lines.join('\n'), 'utf-8');
 }
 
 // ============================================================
-// KNOWLEDGE HELPERS
-// ============================================================
-const SYNONYMS = {
-    'bikin': 'buat', 'membuat': 'buat', 'bikinin': 'buat', 'buatkan': 'buat',
-    'gimana': 'bagaimana', 'caranya': 'cara', 'gmn': 'bagaimana',
-    'syrat': 'syarat', 'syaratnya': 'syarat', 'persyaratan': 'syarat',
-    'perlu': 'butuh', 'perlunya': 'butuh', 'diperlukan': 'butuh', 'dibutuhkan': 'butuh',
-    'ilang': 'hilang', 'kehilangan': 'hilang', 'raib': 'hilang',
-    'sobek': 'rusak', 'rusaknya': 'rusak',
-    'ktpel': 'ktp',
-    'miskin': 'tidak mampu',
-    'akte': 'akta',
-    'srt': 'surat', 'suratnya': 'surat',
-    'waktu': 'jam', 'pukul': 'jam',
-    'lokasi': 'alamat', 'tempat': 'alamat',
-    'telp': 'telepon', 'tlp': 'telepon', 'kontak': 'telepon',
-    'wa': 'whatsapp',
-    'harga': 'biaya', 'bayar': 'biaya', 'tarif': 'biaya',
-    'free': 'gratis',
-    'daring': 'online', 'internet': 'online',
-    'migrasi': 'pindah'
-};
-
-const STOPWORDS = new Set([
-    'yang','dan','di','ke','dari','untuk','apa','itu','ini','saya','kamu',
-    'adalah','atau','dengan','pada','akan','bisa','ada','tidak','nya',
-    'kalau','gimana','bagaimana','mau','ingin','tolong','dong','sih','ya',
-    'nih','deh','kok','lah','kan','aku','anda','kita','mereka','saja',
-    'juga','masih','sudah','belum','hanya','sama','punya','tapi','tetapi',
-    'oleh','buat','dalam','luar','atas','bawah','sini','sana','situ',
-    'mohon','minta','kasih','beri','coba','cek','lihat','tanya',
-    'kenapa','kog','ko','eh','woi','bang','mas','mbak','terus','lanjut',
-    'selanjutnya','kemudian','gitu','gt','gni','gini','yah'
-]);
-
-function normalizeWord(w) {
-    let word = w.toLowerCase().trim();
-    if (SYNONYMS[word]) word = SYNONYMS[word];
-    return word;
-}
-
-function stemID(word) {
-    let w = word;
-    w = w.replace(/^(memper|diper|me|di|ter|ber|pe|se)/, '');
-    w = w.replace(/(kan|lah|nya|kah|pun|ku|mu)$/, '');
-    return w.length > 2 ? w : word;
-}
-
-function tokenize(text) {
-    return text.toLowerCase()
-        .replace(/[^\w\s]/g, ' ')
-        .split(/\s+/)
-        .map(normalizeWord)
-        .filter(w => w.length > 2 && !STOPWORDS.has(w));
-}
-
-function makeBigrams(words) {
-    const bigrams = [];
-    for (let i = 0; i < words.length - 1; i++) bigrams.push(words[i] + ' ' + words[i + 1]);
-    return bigrams;
-}
-
-function makeTrigrams(words) {
-    const trigrams = [];
-    for (let i = 0; i < words.length - 2; i++) {
-        trigrams.push(words[i] + ' ' + words[i + 1] + ' ' + words[i + 2]);
-    }
-    return trigrams;
-}
-
-function memorySearch(question) {
-    if (!CONFIG.memoryEnabled || memoryItems.length === 0) return { item: null, score: 0 };
-    const qWords = tokenize(question);
-    if (qWords.length === 0) return { item: null, score: 0 };
-    const qStems = qWords.map(stemID);
-    const qBigrams = makeBigrams(qWords);
-
-    let best = null;
-    let bestScore = 0;
-    for (const m of memoryItems) {
-        const allText = [m.question, ...m.variants, ...m.keywords].join(' ');
-        const tokens = tokenize(allText);
-        const stems = tokens.map(stemID);
-        const bigrams = makeBigrams(tokens);
-        const tokenSet = new Set(tokens);
-        const stemSet = new Set(stems);
-        const bigramSet = new Set(bigrams);
-
-        let score = 0;
-        for (const w of qWords) if (tokenSet.has(w)) score += 4;
-        for (const s of qStems) if (stemSet.has(s)) score += 3;
-        for (const bg of qBigrams) if (bigramSet.has(bg)) score += 8;
-        score += Math.min(m.hit, 10);
-
-        if (score > bestScore) {
-            bestScore = score;
-            best = m;
-        }
-    }
-    return { item: best, score: bestScore };
-}
-
-function memoryAdd(question, answer) {
-    if (!CONFIG.memoryEnabled) return false;
-    if (!answer || answer.length < 20) return false;
-    if (/belum ada di buku|belum yakin|tidak tahu|tidak ada info/i.test(answer)) return false;
-
-    const qNorm = question.toLowerCase().trim();
-    const existing = memorySearch(question);
-    if (existing.item && existing.score >= CONFIG.memorySaveThreshold) {
-        existing.item.hit += 1;
-        if (!existing.item.variants.includes(qNorm) && existing.item.question.toLowerCase() !== qNorm) {
-            existing.item.variants.push(qNorm);
-        }
-        memorySave();
-        console.log(`[MEMORY] Hit tambah: "${question.slice(0, 50)}" (hit=${existing.item.hit})`);
-        return true;
-    }
-
-    const title = question.length > 60 ? question.slice(0, 57) + '...' : question;
-    memoryItems.push({
-        timestamp: new Date().toISOString(),
-        title,
-        question: qNorm,
-        variants: [],
-        answer: answer.slice(0, 1000),
-        hit: 1,
-        keywords: tokenize(question).slice(0, 10)
-    });
-    memorySave();
-    console.log(`[MEMORY] Tersimpan baru: "${question.slice(0, 50)}"`);
-    return true;
-}
-
-// ============================================================
-// KNOWLEDGE
+// KNOWLEDGE — RAG
 // ============================================================
 let knowledgeChunks = [];
 let availableTopics = [];
@@ -481,7 +454,6 @@ function buildChunkIndex() {
             words: new Set(rawWords),
             stems: new Set(stems),
             bigrams: new Set(makeBigrams(rawWords)),
-            trigrams: new Set(makeTrigrams(rawWords)),
             keywordWords: new Set(keywordWords),
             keywordBigrams: new Set(makeBigrams(keywordWords))
         };
@@ -511,10 +483,6 @@ function extractTopics() {
         seen.add(title.toLowerCase());
         availableTopics.push({ title, source: chunk.source });
     }
-    availableTopics.sort((a, b) => {
-        if (a.source !== b.source) return a.source.localeCompare(b.source);
-        return a.title.localeCompare(b.title);
-    });
     console.log(`[TOPICS] ${availableTopics.length} topik terdeteksi.`);
 }
 
@@ -567,17 +535,15 @@ function searchKnowledge(question, topK = 6) {
 
     const qStems = qWords.map(stemID);
     const qBigrams = makeBigrams(qWords);
-    const qTrigrams = makeTrigrams(qWords);
 
     const scored = knowledgeChunks.map((chunk) => {
         const idx = chunk._index;
         let score = 0;
         for (const w of qWords) if (idx.words.has(w)) score += 3;
         for (const s of qStems) if (idx.stems.has(s)) score += 2;
-        for (const bg of qBigrams) if (idx.bigrams.has(bg)) score += 5;
-        for (const tg of qTrigrams) if (idx.trigrams.has(tg)) score += 8;
+        for (const bg of qBigrams) if (idx.bigrams.has(bg)) score += 6;
         for (const w of qWords) if (idx.keywordWords.has(w)) score += 4;
-        for (const bg of qBigrams) if (idx.keywordBigrams.has(bg)) score += 6;
+        for (const bg of qBigrams) if (idx.keywordBigrams.has(bg)) score += 8;
 
         const title = detectTitle(chunk.text);
         if (title) {
@@ -592,17 +558,16 @@ function searchKnowledge(question, topK = 6) {
     const topScore = filtered.length > 0 ? filtered[0].score : 0;
 
     let confidence = 0;
-    if (topScore >= 12) confidence = 100;
-    else if (topScore >= 6) confidence = 70;
-    else if (topScore > 0) confidence = 40;
+    if (topScore >= 15) confidence = 100;
+    else if (topScore >= 8) confidence = 70;
+    else if (topScore >= 4) confidence = 40;
 
     return { chunks, confidence };
 }
 
 function getSuggestedTopics(limit = 8, query = '') {
     if (!query) {
-        const shuffled = [...availableTopics].sort(() => Math.random() - 0.5);
-        return shuffled.slice(0, limit);
+        return [...availableTopics].sort(() => Math.random() - 0.5).slice(0, limit);
     }
     const qWords = tokenize(query);
     const scored = availableTopics.map(t => {
@@ -613,9 +578,141 @@ function getSuggestedTopics(limit = 8, query = '') {
     });
     const relevant = scored.filter(s => s.score > 0).sort((a, b) => b.score - a.score);
     if (relevant.length >= 3) return relevant.slice(0, limit).map(s => s.topic);
-    const shuffled = [...availableTopics].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, limit);
+    return [...availableTopics].sort(() => Math.random() - 0.5).slice(0, limit);
 }
+
+// ============================================================
+// CONFIG
+// ============================================================
+const DEFAULT_CONFIG = {
+    aiName: 'SIVT AI',
+    tagline: 'Sistem Informasi Virtual TEGALREJO',
+    logoUrl: '',
+    logoSize: 'medium',
+    theme: {
+        primary: '#0d47a1',
+        primaryDark: '#0a3a8a',
+        primaryLight: '#1565c0',
+        sidebarStart: '#0a3a8a',
+        sidebarEnd: '#0d47a1',
+        accent: '#ec4899'
+    },
+    welcomeMessage: 'Halo! Saya SIVTY AI, asisten virtual Kemantren Tegalrejo Yogyakarta.\nTanya apa saja tentang layanan administrasi, persyaratan, jadwal, dan info lainnya. Saya siap bantu 24 jam!',
+    systemInstruction: `Kamu adalah SIVT AI, asisten virtual resmi Kemantren Tegalrejo, Yogyakarta.
+
+ATURAN WAJIB:
+1. Jawab HANYA berdasarkan "KONTEKS" yang diberikan.
+2. Kalau jawaban TIDAK ADA di konteks, jawab: "Wah, info itu belum ada di buku saya nih. Coba hubungi petugas langsung ya di (0274) 123456."
+3. DILARANG mengarang jawaban, nomor telepon, alamat, atau persyaratan.
+4. DILARANG pakai tanda bintang ** atau * atau ## atau backtick.
+5. Untuk list, gunakan simbol bullet "•" atau angka "1. 2. 3."
+6. Pisahkan bagian dengan baris kosong.
+7. Jawab singkat, padat, 2-3 paragraf pendek.
+
+Info umum: Alamat Jl. Tegalrejo No.1, Yogyakarta. Jam: Senin-Jumat 08.00-15.00, Sabtu 08.00-12.00. Telepon: (0274) 123456.`,
+    memoryEnabled: true,
+    memoryMinScore: 40,
+    memorySaveThreshold: 30,
+    conversationHistoryEnabled: true,
+    conversationHistorySize: 10,
+    rateLimitPerSession: 20
+};
+
+function loadConfig() {
+    if (!fs.existsSync(PATHS.config)) {
+        fs.writeFileSync(PATHS.config, JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf-8');
+        return { ...DEFAULT_CONFIG };
+    }
+    try {
+        const saved = JSON.parse(fs.readFileSync(PATHS.config, 'utf-8'));
+        return {
+            ...DEFAULT_CONFIG,
+            ...saved,
+            theme: { ...DEFAULT_CONFIG.theme, ...(saved.theme || {}) }
+        };
+    } catch {
+        return { ...DEFAULT_CONFIG };
+    }
+}
+function saveConfig() {
+    fs.writeFileSync(PATHS.config, JSON.stringify(CONFIG, null, 2), 'utf-8');
+}
+let CONFIG = loadConfig();
+
+// ============================================================
+// BACKUP
+// ============================================================
+function createZip(sourceDir, destZip) {
+    return new Promise((resolve, reject) => {
+        try {
+            const zip = new AdmZip();
+            zip.addLocalFolder(sourceDir);
+            zip.writeZip(destZip);
+            resolve();
+        } catch (e) { reject(e); }
+    });
+}
+
+async function runBackup() {
+    try {
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const tmpDir = path.join(PATHS.tmp, `backup_${stamp}`);
+        fs.mkdirSync(tmpDir, { recursive: true });
+
+        const files = [
+            { src: PATHS.config, name: 'config.json' },
+            { src: PATHS.providers, name: 'providers.json.enc' },
+            { src: PATHS.memoryFile, name: 'memory.md' },
+            { src: PATHS.unanswered, name: 'unanswered.json' }
+        ];
+        for (const f of files) {
+            if (fs.existsSync(f.src)) fs.copyFileSync(f.src, path.join(tmpDir, f.name));
+        }
+
+        const kdir = path.join(tmpDir, 'knowledge');
+        fs.mkdirSync(kdir, { recursive: true });
+        if (fs.existsSync(PATHS.knowledge)) {
+            fs.readdirSync(PATHS.knowledge).forEach(f => {
+                if (!f.startsWith('~$')) {
+                    fs.copyFileSync(path.join(PATHS.knowledge, f), path.join(kdir, f));
+                }
+            });
+        }
+
+        const tmpZip = path.join(PATHS.tmp, `backup_${stamp}.zip`);
+        await createZip(tmpDir, tmpZip);
+
+        const zipBuffer = fs.readFileSync(tmpZip);
+        const encrypted = encryptBuffer(zipBuffer);
+
+        const finalName = `backup-${stamp}.zip.enc`;
+        fs.writeFileSync(path.join(PATHS.backupsDir, finalName), encrypted);
+
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+        fs.unlinkSync(tmpZip);
+
+        console.log(`[BACKUP] Dibuat: ${finalName}`);
+
+        const keepDays = 30;
+        const cutoff = Date.now() - keepDays * 86400000;
+        fs.readdirSync(PATHS.backupsDir).forEach(f => {
+            const p = path.join(PATHS.backupsDir, f);
+            try {
+                const s = fs.statSync(p);
+                if (s.isFile() && f.endsWith('.zip.enc') && s.mtimeMs < cutoff) {
+                    fs.unlinkSync(p);
+                }
+            } catch (_) {}
+        });
+    } catch (e) {
+        console.error('[BACKUP] Gagal:', e.message);
+    }
+}
+
+cron.schedule('0 2 * * *', () => {
+    console.log('[CRON] Backup otomatis...');
+    runBackup();
+});
 
 // ============================================================
 // MIDDLEWARE
@@ -624,45 +721,45 @@ app.use((req, res, next) => {
     const blocked = ['.env', 'keys.json', 'config.json', 'package.json', 'package-lock.json'];
     const p = req.path.toLowerCase();
     if (blocked.some(f => p.includes(f))) return res.status(404).end();
-    if (p.startsWith('/knowledge/') || p.startsWith('/memory/') || p.startsWith('/tmp/') || p.startsWith('/node_modules/')) {
+    if (p.startsWith('/knowledge/') || p.startsWith('/memory/') || p.startsWith('/data/') ||
+        p.startsWith('/tmp/') || p.startsWith('/node_modules/') || p.startsWith('/lib/')) {
         return res.status(404).end();
     }
     next();
 });
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '5mb' }));
 app.use(cookieParser());
 
 app.use('/api/', rateLimit({
     windowMs: 15 * 60 * 1000, max: 300,
-    standardHeaders: true, legacyHeaders: false,
-    message: { error: 'Terlalu banyak request. Coba lagi nanti.' }
+    standardHeaders: true, legacyHeaders: false
 }));
 
-app.use('/api/chat', rateLimit({
-    windowMs: 60 * 1000, max: 30,
-    message: { error: 'Pelan dong, tunggu bentar ya.' }
-}));
+const chatLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: CONFIG.rateLimitPerSession || 20,
+    keyGenerator: (req, res) => {
+        if (req.body?.sessionId) return 'sess_' + req.body.sessionId;
+        return ipKeyGenerator(req, res);
+    },
+    standardHeaders: true, legacyHeaders: false,
+    validate: { keyGeneratorIpFallback: false }
+});
+app.use('/api/chat', chatLimiter);
 
 app.use('/api/admin/login', rateLimit({
-    windowMs: 15 * 60 * 1000, max: 10, skipSuccessfulRequests: true,
-    message: { success: false, message: 'Terlalu banyak percobaan login. Coba lagi nanti.' }
+    windowMs: 15 * 60 * 1000, max: 10, skipSuccessfulRequests: true
 }));
-
-app.use((req, res, next) => {
-    const time = new Date().toISOString();
-    res.on('finish', () => {
-        if (req.path.startsWith('/api/')) {
-            console.log(`[${time}] ${req.ip} ${req.method} ${req.path} → ${res.statusCode}`);
-        }
-    });
-    next();
-});
 
 app.use(express.static(path.join(__dirname, 'public'), {
     dotfiles: 'deny',
-    index: 'index.html'
+    index: 'index.html',
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('sw.js')) res.setHeader('Service-Worker-Allowed', '/');
+        if (filePath.endsWith('manifest.json')) res.setHeader('Content-Type', 'application/manifest+json');
+    }
 }));
 
 // ============================================================
@@ -676,7 +773,7 @@ function authAdmin(req, res, next) {
         req.admin = jwt.verify(token, JWT_SECRET);
         next();
     } catch {
-        res.status(401).json({ error: 'Token tidak valid atau kadaluarsa' });
+        res.status(401).json({ error: 'Token tidak valid' });
     }
 }
 
@@ -688,10 +785,104 @@ app.get('/api/config/public', (req, res) => {
         aiName: CONFIG.aiName,
         tagline: CONFIG.tagline,
         logoUrl: CONFIG.logoUrl,
-        logoText: CONFIG.logoText,
+        logoSize: CONFIG.logoSize,
+        theme: CONFIG.theme,
         welcomeMessage: CONFIG.welcomeMessage,
-        quickButtons: CONFIG.quickButtons,
-        conversationHistoryEnabled: CONFIG.conversationHistoryEnabled
+        quickButtons: CONFIG.quickButtons
+    });
+});
+
+app.get('/api/admin/check', (req, res) => {
+    const token = req.cookies?.admin_token ||
+                  (req.headers['authorization'] || '').replace('Bearer ', '');
+    if (!token) return res.json({ authenticated: false });
+    try {
+        const user = jwt.verify(token, JWT_SECRET);
+        return res.json({ authenticated: true, username: user.username, token });
+    } catch {
+        return res.json({ authenticated: false });
+    }
+});
+
+app.get('/api/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        uptime: process.uptime(),
+        providers: PROVIDERS_CONFIG.map(p => ({ name: p.name, models: p.models.length, enabled: p.enabled })),
+        knowledgeChunks: knowledgeChunks.length,
+        topics: availableTopics.length,
+        memory: memoryItems.length,
+        sessions: Object.keys(sessions).length,
+        unanswered: unansweredQuestions.filter(u => !u.resolved).length
+    });
+});
+
+// ============================================================
+// DASHBOARD STATS
+// ============================================================
+app.get('/api/admin/dashboard/stats', authAdmin, (req, res) => {
+    const activeProviders = PROVIDERS_CONFIG.filter(p => p.enabled !== false).length;
+    const totalProviders = PROVIDERS_CONFIG.length;
+    const totalSessions = Object.keys(sessions).length;
+    const totalMessages = Object.values(sessions).reduce((sum, s) => sum + s.messages.length, 0);
+    const unreadNotif = notifications.filter(n => !n.read).length;
+    const pendingUnanswered = unansweredQuestions.filter(u => !u.resolved).length;
+
+    // Aktivitas 7 hari terakhir
+    const now = Date.now();
+    const dailyStats = [];
+    for (let i = 6; i >= 0; i--) {
+        const dayStart = now - i * 86400000;
+        const dayEnd = dayStart + 86400000;
+        const count = Object.values(sessions).filter(s =>
+            s.lastActivity >= dayStart && s.lastActivity < dayEnd
+        ).length;
+        const date = new Date(dayStart);
+        dailyStats.push({
+            date: date.toISOString().slice(0, 10),
+            day: ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'][date.getDay()],
+            sessions: count
+        });
+    }
+
+    res.json({
+        aiName: CONFIG.aiName,
+        uptime: process.uptime(),
+        providers: {
+            total: totalProviders,
+            active: activeProviders,
+            inactive: totalProviders - activeProviders,
+            list: PROVIDERS_CONFIG.map(p => ({
+                name: PROVIDERS[p.name]?.name || p.name,
+                enabled: p.enabled !== false,
+                models: p.models.length
+            }))
+        },
+        knowledge: {
+            chunks: knowledgeChunks.length,
+            topics: availableTopics.length,
+            files: fs.existsSync(PATHS.knowledge)
+                ? fs.readdirSync(PATHS.knowledge).filter(f => /\.(md|txt)$/i.test(f)).length
+                : 0
+        },
+        memory: {
+            total: memoryItems.length,
+            totalHits: memoryItems.reduce((sum, m) => sum + (m.hit || 0), 0)
+        },
+        sessions: {
+            total: totalSessions,
+            messages: totalMessages,
+            daily: dailyStats
+        },
+        notifications: {
+            total: notifications.length,
+            unread: unreadNotif
+        },
+        unanswered: {
+            total: unansweredQuestions.length,
+            pending: pendingUnanswered,
+            resolved: unansweredQuestions.length - pendingUnanswered
+        }
     });
 });
 
@@ -700,21 +891,19 @@ app.get('/api/config/public', (req, res) => {
 // ============================================================
 app.post('/api/admin/login', (req, res) => {
     const { username, password } = req.body;
-    if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
-        return res.status(400).json({ success: false, message: 'Input tidak valid' });
-    }
-    const okUser = username === ADMIN_USERNAME;
-    const okPass = bcrypt.compareSync(password, ADMIN_PASSWORD_HASH);
-    if (!okUser || !okPass) {
-        console.warn(`[AUTH] Login gagal: ${username} dari ${req.ip}`);
+    if (!username || !password) return res.status(400).json({ success: false, message: 'Input tidak valid' });
+
+    if (username !== ADMIN_USERNAME || !bcrypt.compareSync(password, ADMIN_PASSWORD_HASH)) {
+        console.warn(`[AUTH] Login gagal: ${username}`);
         return res.status(401).json({ success: false, message: 'Username atau password salah' });
     }
-    const token = jwt.sign({ username, role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
+
+    const token = jwt.sign({ username, role: 'admin' }, JWT_SECRET, { expiresIn: '30d' });
     res.cookie('admin_token', token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 24 * 60 * 60 * 1000
+        sameSite: 'lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000
     });
     console.log(`[AUTH] Login sukses: ${username}`);
     res.json({ success: true, token });
@@ -731,119 +920,376 @@ app.post('/api/admin/logout', authAdmin, (req, res) => {
 app.get('/api/admin/config', authAdmin, (req, res) => {
     res.json({
         ...CONFIG,
-        apiKeys: API_KEYS.map((k, i) => ({
+        providers: PROVIDERS_CONFIG.map((p, i) => ({
             index: i,
-            masked: k.slice(0, 8) + '...' + k.slice(-6)
+            name: p.name,
+            displayName: PROVIDERS[p.name]?.name || p.name,
+            models: p.models,
+            masked: p.apiKey ? p.apiKey.slice(0, 8) + '...' + p.apiKey.slice(-6) : '',
+            enabled: p.enabled !== false
         })),
         knowledgeFiles: fs.existsSync(PATHS.knowledge)
-            ? fs.readdirSync(PATHS.knowledge)
-                .filter(f => /\.(md|txt)$/i.test(f))
-                .map(f => {
-                    const s = fs.statSync(path.join(PATHS.knowledge, f));
-                    return { name: f, size: s.size, modified: s.mtime };
-                })
+            ? fs.readdirSync(PATHS.knowledge).filter(f => /\.(md|txt)$/i.test(f)).map(f => {
+                const s = fs.statSync(path.join(PATHS.knowledge, f));
+                return { name: f, size: s.size, modified: s.mtime };
+            })
             : [],
         knowledgeChunks: knowledgeChunks.length,
-        availableTopics: availableTopics.length,
         memoryCount: memoryItems.length,
         sessionCount: Object.keys(sessions).length,
-        memoryLastUpdate: fs.existsSync(PATHS.memoryFile)
-            ? fs.statSync(PATHS.memoryFile).mtime
-            : null
+        unreadNotifications: notifications.filter(n => !n.read).length,
+        pendingUnanswered: unansweredQuestions.filter(u => !u.resolved).length
     });
 });
 
 app.post('/api/admin/config', authAdmin, (req, res) => {
     try {
-        const allowed = ['aiName','tagline','logoUrl','logoText','welcomeMessage',
-                        'systemInstruction','models','generationConfig',
-                        'contactInfo','quickButtons','memoryEnabled',
+        const allowed = ['aiName','tagline','logoUrl','logoSize','theme','welcomeMessage',
+                        'systemInstruction','quickButtons','memoryEnabled',
                         'memoryMinScore','memorySaveThreshold',
-                        'conversationHistoryEnabled','conversationHistorySize'];
+                        'conversationHistoryEnabled','conversationHistorySize',
+                        'rateLimitPerSession','contactInfo'];
         for (const k of allowed) {
-            if (req.body[k] !== undefined) CONFIG[k] = req.body[k];
+            if (req.body[k] !== undefined) {
+                if (k === 'theme' && typeof req.body[k] === 'object') {
+                    CONFIG.theme = { ...CONFIG.theme, ...req.body[k] };
+                } else {
+                    CONFIG[k] = req.body[k];
+                }
+            }
         }
         saveConfig();
-        console.log(`[ADMIN] Config diubah oleh ${req.admin.username}`);
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
 });
 
+// ============================================================
+// PROVIDERS — API KEYS MULTI
+// ============================================================
+app.post('/api/admin/providers/add', authAdmin, (req, res) => {
+    try {
+        const { name, apiKey, models } = req.body;
+        if (!name || !apiKey) {
+            return res.json({ success: false, message: 'Nama provider & API key wajib diisi' });
+        }
+        if (!PROVIDERS[name]) {
+            return res.json({ success: false, message: `Provider "${name}" tidak dikenal.` });
+        }
+
+        PROVIDERS_CONFIG.push({
+            name,
+            apiKey: apiKey.trim(),
+            models: Array.isArray(models) && models.length > 0 ? models : PROVIDERS[name].models,
+            enabled: true,
+            addedAt: new Date().toISOString()
+        });
+        saveProviders();
+        notifAdd('info', 'Provider Ditambahkan', `${PROVIDERS[name].name} berhasil ditambahkan`, 'info');
+
+        console.log(`[PROVIDERS] Tambah ${name}, total ${PROVIDERS_CONFIG.length}`);
+        res.json({ success: true, total: PROVIDERS_CONFIG.length });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.post('/api/admin/providers/remove', authAdmin, (req, res) => {
+    const { index } = req.body;
+    if (index < 0 || index >= PROVIDERS_CONFIG.length) {
+        return res.json({ success: false, message: 'Index tidak valid' });
+    }
+    const removed = PROVIDERS_CONFIG[index];
+    PROVIDERS_CONFIG.splice(index, 1);
+    saveProviders();
+    notifAdd('warning', 'Provider Dihapus', `${PROVIDERS[removed.name]?.name || removed.name} telah dihapus`, 'warning');
+    res.json({ success: true, total: PROVIDERS_CONFIG.length });
+});
+
+app.post('/api/admin/providers/toggle', authAdmin, (req, res) => {
+    const { index } = req.body;
+    if (index < 0 || index >= PROVIDERS_CONFIG.length) {
+        return res.json({ success: false, message: 'Index tidak valid' });
+    }
+    PROVIDERS_CONFIG[index].enabled = !PROVIDERS_CONFIG[index].enabled;
+    saveProviders();
+    const p = PROVIDERS_CONFIG[index];
+    const state = p.enabled ? 'AKTIF' : 'NONAKTIF';
+    notifAdd('info', `Provider ${state}`, `${PROVIDERS[p.name]?.name || p.name} → ${state}`, 'info');
+    console.log(`[PROVIDERS] Toggle #${index} (${p.name}) → ${state}`);
+    res.json({ success: true, enabled: PROVIDERS_CONFIG[index].enabled });
+});
+
+app.post('/api/admin/providers/update-models', authAdmin, (req, res) => {
+    try {
+        const { index, models } = req.body;
+        if (index < 0 || index >= PROVIDERS_CONFIG.length) {
+            return res.json({ success: false, message: 'Index tidak valid' });
+        }
+        if (!Array.isArray(models) || models.length === 0) {
+            return res.json({ success: false, message: 'Models harus array minimal 1' });
+        }
+        PROVIDERS_CONFIG[index].models = models.map(m => String(m).trim()).filter(Boolean);
+        saveProviders();
+        console.log(`[PROVIDERS] Update models #${index}`);
+        res.json({ success: true, models: PROVIDERS_CONFIG[index].models });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.post('/api/admin/providers/test', authAdmin, async (req, res) => {
+    try {
+        const { index } = req.body;
+        if (index < 0 || index >= PROVIDERS_CONFIG.length) {
+            return res.json({ success: false, message: 'Index tidak valid' });
+        }
+        const p = PROVIDERS_CONFIG[index];
+        const provider = PROVIDERS[p.name];
+        const model = p.models[0];
+
+        const testConv = [{ role: 'user', text: 'Balas dengan: OK' }];
+        const text = await provider.call({
+            apiKey: p.apiKey,
+            model,
+            baseUrl: provider.baseUrl,
+            systemPrompt: 'Balas singkat.',
+            conversation: testConv
+        });
+
+        res.json({ success: true, message: `Aktif: "${text.slice(0, 50)}"`, model });
+    } catch (err) {
+        const msg = String(err?.message || err);
+        let advice = 'Gagal';
+        if (msg.includes('401')) advice = 'API key tidak valid';
+        else if (msg.includes('429')) advice = 'Kuota habis';
+        else if (msg.includes('404')) advice = 'Model tidak tersedia';
+        res.json({ success: false, message: advice, detail: msg.slice(0, 200) });
+    }
+});
+
+// ============================================================
+// UNANSWERED QUESTIONS ENDPOINTS
+// ============================================================
+app.get('/api/admin/unanswered', authAdmin, (req, res) => {
+    const filter = req.query.filter || 'all';
+    let items = [...unansweredQuestions];
+
+    if (filter === 'pending') items = items.filter(u => !u.resolved);
+    else if (filter === 'resolved') items = items.filter(u => u.resolved);
+
+    items.sort((a, b) => new Date(b.lastAsked) - new Date(a.lastAsked));
+
+    res.json({
+        total: unansweredQuestions.length,
+        pending: unansweredQuestions.filter(u => !u.resolved).length,
+        resolved: unansweredQuestions.filter(u => u.resolved).length,
+        items
+    });
+});
+
+app.post('/api/admin/unanswered/resolve', authAdmin, (req, res) => {
+    const { id } = req.body;
+    const item = unansweredQuestions.find(u => u.id === id);
+    if (!item) return res.json({ success: false, message: 'Tidak ditemukan' });
+    item.resolved = true;
+    item.resolvedAt = new Date().toISOString();
+    unansweredSave();
+    res.json({ success: true });
+});
+
+app.post('/api/admin/unanswered/delete', authAdmin, (req, res) => {
+    const { id } = req.body;
+    const idx = unansweredQuestions.findIndex(u => u.id === id);
+    if (idx === -1) return res.json({ success: false, message: 'Tidak ditemukan' });
+    unansweredQuestions.splice(idx, 1);
+    unansweredSave();
+    res.json({ success: true });
+});
+
+app.post('/api/admin/unanswered/clear', authAdmin, (req, res) => {
+    const { onlyResolved } = req.body || {};
+    if (onlyResolved) {
+        unansweredQuestions = unansweredQuestions.filter(u => !u.resolved);
+    } else {
+        unansweredQuestions = [];
+    }
+    unansweredSave();
+    res.json({ success: true, total: unansweredQuestions.length });
+});
+
+// ✅ TAMBAH KE KNOWLEDGE
+app.post('/api/admin/unanswered/add-to-knowledge', authAdmin, (req, res) => {
+    try {
+        const { id, question, answer, category } = req.body;
+        if (!question || !answer) {
+            return res.json({ success: false, message: 'Pertanyaan & jawaban wajib diisi' });
+        }
+
+        const timestamp = new Date().toISOString();
+        const title = question.length > 80 ? question.slice(0, 77) + '...' : question;
+
+        let block = `\n\n## ${title}\n\n`;
+        block += `Kata kunci : ${question}\n\n`;
+        block += `Pertanyaan : ${question}\n\n`;
+        block += `Jawaban : ${answer}\n\n`;
+        if (category) block += `Kategori : ${category}\n`;
+
+        const knowledgeFile = path.join(PATHS.knowledge, 'buku-pengetahuan.md');
+        if (!fs.existsSync(knowledgeFile)) {
+            fs.writeFileSync(knowledgeFile, '# Buku Pengetahuan SIVT AI\n', 'utf-8');
+        }
+
+        fs.appendFileSync(knowledgeFile, block, 'utf-8');
+
+        // Tandai sebagai resolved
+        if (id) {
+            const item = unansweredQuestions.find(u => u.id === id);
+            if (item) {
+                item.resolved = true;
+                item.resolvedAt = timestamp;
+                unansweredSave();
+            }
+        }
+
+        // Reload knowledge
+        loadKnowledge();
+
+        notifAdd('info', 'Pengetahuan Ditambahkan',
+            `Pertanyaan "${title}" berhasil ditambahkan ke buku pengetahuan`, 'info');
+
+        console.log(`[KNOWLEDGE] Tambah dari unanswered: ${title}`);
+        res.json({
+            success: true,
+            message: 'Berhasil ditambahkan ke buku pengetahuan',
+            chunks: knowledgeChunks.length
+        });
+    } catch (e) {
+        console.error('[KNOWLEDGE] Gagal tambah:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ============================================================
+// UPLOAD LOGO
+// ============================================================
+const logoUpload = multer({
+    dest: PATHS.tmp,
+    limits: { fileSize: 2 * 1024 * 1024, files: 1 },
+    fileFilter: (req, file, cb) => {
+        if (!/^image\/(png|jpe?g|gif|webp|svg\+xml)$/i.test(file.mimetype)) {
+            return cb(new Error('Hanya gambar'));
+        }
+        cb(null, true);
+    }
+});
+
+app.post('/api/admin/logo/upload', authAdmin, logoUpload.single('logo'), (req, res) => {
+    try {
+        if (!req.file) return res.json({ success: false, message: 'Tidak ada file' });
+        const ext = path.extname(req.file.originalname).toLowerCase() || '.png';
+        const allowed = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
+        const finalExt = allowed.includes(ext) ? ext : '.png';
+
+        if (fs.existsSync(PATHS.uploadsDir)) {
+            fs.readdirSync(PATHS.uploadsDir).forEach(f => {
+                if (f.startsWith('logo')) {
+                    try { fs.unlinkSync(path.join(PATHS.uploadsDir, f)); } catch (_) {}
+                }
+            });
+        }
+        const fileName = `logo${finalExt}`;
+        fs.renameSync(req.file.path, path.join(PATHS.uploadsDir, fileName));
+        CONFIG.logoUrl = `/uploads/${fileName}?v=${Date.now()}`;
+        saveConfig();
+        notifAdd('info', 'Logo Diperbarui', 'Logo berhasil diupload', 'info');
+        res.json({ success: true, logoUrl: CONFIG.logoUrl });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.post('/api/admin/logo/delete', authAdmin, (req, res) => {
+    if (fs.existsSync(PATHS.uploadsDir)) {
+        fs.readdirSync(PATHS.uploadsDir).forEach(f => {
+            if (f.startsWith('logo')) {
+                try { fs.unlinkSync(path.join(PATHS.uploadsDir, f)); } catch (_) {}
+            }
+        });
+    }
+    CONFIG.logoUrl = '';
+    saveConfig();
+    res.json({ success: true });
+});
+
+// ============================================================
+// GANTI PASSWORD
+// ============================================================
 app.post('/api/admin/change-password', authAdmin, (req, res) => {
     const { oldPassword, newPassword } = req.body;
     if (!oldPassword || !newPassword || newPassword.length < 8) {
-        return res.json({ success: false, message: 'Password baru minimal 8 karakter' });
+        return res.json({ success: false, message: 'Password minimal 8 karakter' });
     }
     if (!bcrypt.compareSync(oldPassword, ADMIN_PASSWORD_HASH)) {
         return res.json({ success: false, message: 'Password lama salah' });
     }
+    const newHash = bcrypt.hashSync(newPassword, 10);
+    ADMIN_PASSWORD_HASH = newHash;
     const envPath = path.join(__dirname, '.env');
-    let envContent = fs.readFileSync(envPath, 'utf-8');
-    envContent = envContent.replace(/^ADMIN_PASSWORD=.*$/m, `ADMIN_PASSWORD=${newPassword}`);
-    fs.writeFileSync(envPath, envContent, 'utf-8');
-    console.log('[SECURITY] Password admin diganti.');
-    res.json({ success: true, message: 'Password diganti. Restart server untuk efek penuh.' });
-});
-
-// ============================================================
-// API KEYS
-// ============================================================
-app.post('/api/admin/keys/add', authAdmin, (req, res) => {
-    const { key } = req.body;
-    if (!key || typeof key !== 'string' || key.length < 10) {
-        return res.json({ success: false, message: 'API key tidak valid' });
-    }
-    const keys = loadKeys();
-    if (keys.includes(key.trim())) return res.json({ success: false, message: 'API key sudah ada' });
-    keys.push(key.trim());
-    saveKeys(keys);
-    rebuildClients();
-    res.json({ success: true, total: keys.length });
-});
-
-app.post('/api/admin/keys/remove', authAdmin, (req, res) => {
-    const { index } = req.body;
-    const keys = loadKeys();
-    if (index < 0 || index >= keys.length) return res.json({ success: false, message: 'Index tidak valid' });
-    keys.splice(index, 1);
-    saveKeys(keys);
-    rebuildClients();
-    res.json({ success: true, total: keys.length });
-});
-
-app.post('/api/admin/keys/test', authAdmin, async (req, res) => {
-    const { index } = req.body;
-    const keys = loadKeys();
-    if (index < 0 || index >= keys.length) return res.json({ success: false, message: 'Index tidak valid' });
     try {
-        const testClient = new GoogleGenAI({ apiKey: keys[index] });
-        const model = CONFIG.models[0] || 'gemini-flash-latest';
-        await testClient.models.generateContent({
-            model,
-            contents: [{ role: 'user', parts: [{ text: 'ping' }] }],
-            config: { maxOutputTokens: 5 }
-        });
-        res.json({ success: true, message: 'API key aktif' });
-    } catch (err) {
-        const msg = String(err?.message || err);
-        let advice = 'API key gagal.';
-        if (msg.includes('429')) advice = 'Kuota habis';
-        else if (msg.includes('404')) advice = 'Model tidak tersedia';
-        else if (msg.toLowerCase().includes('invalid')) advice = 'API key tidak valid';
-        res.json({ success: false, message: advice });
+        let envContent = fs.readFileSync(envPath, 'utf-8');
+        if (/^ADMIN_PASSWORD_HASH=/m.test(envContent)) {
+            envContent = envContent.replace(/^ADMIN_PASSWORD_HASH=.*$/m, `ADMIN_PASSWORD_HASH=${newHash}`);
+        } else if (/^ADMIN_PASSWORD=/m.test(envContent)) {
+            envContent = envContent.replace(/^ADMIN_PASSWORD=.*$/m, `ADMIN_PASSWORD_HASH=${newHash}`);
+        } else {
+            envContent += `\nADMIN_PASSWORD_HASH=${newHash}\n`;
+        }
+        fs.writeFileSync(envPath, envContent, 'utf-8');
+        res.json({ success: true, message: 'Password diganti. Restart server.' });
+    } catch (e) {
+        res.json({ success: false, message: 'Gagal simpan: ' + e.message });
     }
 });
 
 // ============================================================
-// KNOWLEDGE FILES
+// NOTIFICATIONS
+// ============================================================
+app.get('/api/admin/notifications', authAdmin, (req, res) => {
+    res.json({
+        unread: notifications.filter(n => !n.read).length,
+        total: notifications.length,
+        items: notifications.slice().reverse().slice(0, 50)
+    });
+});
+
+app.post('/api/admin/notifications/read', authAdmin, (req, res) => {
+    const { id } = req.body;
+    if (id) {
+        const n = notifications.find(x => x.id === id);
+        if (n) n.read = true;
+    } else {
+        notifications.forEach(n => n.read = true);
+    }
+    notifSave();
+    res.json({ success: true });
+});
+
+app.post('/api/admin/notifications/clear', authAdmin, (req, res) => {
+    notifications = [];
+    notifSave();
+    res.json({ success: true });
+});
+
+// ============================================================
+// KNOWLEDGE
 // ============================================================
 const upload = multer({
     dest: PATHS.tmp,
     limits: { fileSize: 5 * 1024 * 1024, files: 1 },
     fileFilter: (req, file, cb) => {
-        if (!/\.(md|txt)$/i.test(file.originalname)) return cb(new Error('Hanya file .md atau .txt'));
+        if (!/\.(md|txt)$/i.test(file.originalname)) return cb(new Error('Hanya .md / .txt'));
         cb(null, true);
     }
 });
@@ -852,24 +1298,21 @@ app.post('/api/admin/knowledge/upload', authAdmin, upload.single('file'), (req, 
     try {
         if (!req.file) return res.json({ success: false, message: 'Tidak ada file' });
         const safeName = path.basename(req.file.originalname).replace(/[^\w\-. ]/g, '_');
-        const target = path.join(PATHS.knowledge, safeName);
-        fs.renameSync(req.file.path, target);
+        fs.renameSync(req.file.path, path.join(PATHS.knowledge, safeName));
         loadKnowledge();
         res.json({ success: true, message: `${safeName} diupload`, chunks: knowledgeChunks.length });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
 });
-
 app.post('/api/admin/knowledge/delete', authAdmin, (req, res) => {
     const safe = path.basename(req.body.name || '');
     const filePath = path.join(PATHS.knowledge, safe);
-    if (!fs.existsSync(filePath)) return res.json({ success: false, message: 'File tidak ada' });
+    if (!fs.existsSync(filePath)) return res.json({ success: false, message: 'Tidak ada' });
     fs.unlinkSync(filePath);
     loadKnowledge();
     res.json({ success: true, chunks: knowledgeChunks.length });
 });
-
 app.post('/api/admin/knowledge/reload', authAdmin, (req, res) => {
     loadKnowledge();
     res.json({ success: true, chunks: knowledgeChunks.length });
@@ -882,43 +1325,34 @@ app.get('/api/admin/memory', authAdmin, (req, res) => {
     res.json({
         total: memoryItems.length,
         items: memoryItems.map(m => ({
-            timestamp: m.timestamp,
-            title: m.title,
-            question: m.question,
-            answer: m.answer.slice(0, 200),
-            hit: m.hit,
-            variants: m.variants
+            timestamp: m.timestamp, title: m.title, question: m.question,
+            answer: m.answer.slice(0, 200), hit: m.hit, variants: m.variants
         }))
     });
 });
-
 app.post('/api/admin/memory/delete', authAdmin, (req, res) => {
     const { index } = req.body;
-    if (index < 0 || index >= memoryItems.length) return res.json({ success: false, message: 'Index tidak valid' });
+    if (index < 0 || index >= memoryItems.length) return res.json({ success: false });
     memoryItems.splice(index, 1);
     memorySave();
     res.json({ success: true, total: memoryItems.length });
 });
-
 app.post('/api/admin/memory/clear', authAdmin, (req, res) => {
     memoryItems = [];
     memorySave();
     res.json({ success: true, total: 0 });
 });
-
 app.post('/api/admin/memory/reload', authAdmin, (req, res) => {
     memoryLoad();
     res.json({ success: true, total: memoryItems.length });
 });
 
 // ============================================================
-// SESSION ENDPOINTS
+// SESSIONS
 // ============================================================
 app.get('/api/admin/sessions', authAdmin, (req, res) => {
     const list = Object.values(sessions).map(s => ({
-        id: s.id,
-        createdAt: s.createdAt,
-        lastActivity: s.lastActivity,
+        id: s.id, createdAt: s.createdAt, lastActivity: s.lastActivity,
         messageCount: s.messages.length,
         lastMessage: s.messages.length > 0 ? s.messages[s.messages.length - 1].text.slice(0, 80) : ''
     }));
@@ -926,9 +1360,9 @@ app.get('/api/admin/sessions', authAdmin, (req, res) => {
 });
 
 app.get('/api/admin/sessions/:id', authAdmin, (req, res) => {
-    const s = sessions[req.params.id];
-    if (!s) return res.status(404).json({ error: 'Sesi tidak ditemukan' });
-    res.json(s);
+    const session = sessions[req.params.id];
+    if (!session) return res.json({ success: false, message: 'Sesi tidak ditemukan' });
+    res.json({ success: true, session });
 });
 
 app.post('/api/admin/sessions/clear', authAdmin, (req, res) => {
@@ -938,44 +1372,35 @@ app.post('/api/admin/sessions/clear', authAdmin, (req, res) => {
             try { fs.unlinkSync(path.join(PATHS.sessionsDir, f)); } catch (_) {}
         });
     }
-    console.log('[SESSION] Semua sesi dihapus oleh admin.');
     res.json({ success: true });
 });
 
 // ============================================================
-// CHAT
+// BACKUP
 // ============================================================
-async function* streamGemini(contents) {
-    let lastError = null;
-    const models = CONFIG.models?.length ? CONFIG.models : ['gemini-flash-latest'];
-    for (const model of models) {
-        for (let k = 0; k < clients.length; k++) {
-            try {
-                const stream = await clients[k].models.generateContentStream({
-                    model, contents,
-                    config: {
-                        systemInstruction: CONFIG.systemInstruction,
-                        temperature: CONFIG.generationConfig?.temperature ?? 0.2,
-                        topP: CONFIG.generationConfig?.topP ?? 0.85,
-                        topK: CONFIG.generationConfig?.topK ?? 30,
-                        maxOutputTokens: CONFIG.generationConfig?.maxOutputTokens ?? 1200
-                    }
-                });
-                console.log(`[STREAM OK] ${model} key#${k + 1}`);
-                yield { model, key: `key#${k + 1}`, stream };
-                return;
-            } catch (err) {
-                lastError = err;
-                const msg = String(err?.message || err);
-                console.warn(`[SKIP] ${model} key#${k + 1}: ${msg.slice(0, 80)}`);
-                if (!msg.match(/429|404|503|RESOURCE_EXHAUSTED|NOT_FOUND|UNAVAILABLE/)) throw err;
-                await new Promise(r => setTimeout(r, 400));
-            }
-        }
+app.post('/api/admin/backup', authAdmin, async (req, res) => {
+    try {
+        await runBackup();
+        notifAdd('info', 'Backup Berhasil', 'File backup telah dibuat', 'info');
+        res.json({ success: true, message: 'Backup dibuat' });
+    } catch (e) {
+        res.json({ success: false, message: e.message });
     }
-    throw lastError || new Error('Semua model & key gagal');
-}
+});
+app.get('/api/admin/backups', authAdmin, (req, res) => {
+    if (!fs.existsSync(PATHS.backupsDir)) return res.json({ items: [] });
+    const items = fs.readdirSync(PATHS.backupsDir)
+        .filter(f => f.endsWith('.zip.enc'))
+        .map(name => {
+            const s = fs.statSync(path.join(PATHS.backupsDir, name));
+            return { name, created: s.mtime, size: s.size };
+        }).sort((a, b) => b.created - a.created);
+    res.json({ items });
+});
 
+// ============================================================
+// CHAT — RAG + MULTI-PROVIDER + MEMORY + UNANSWERED LOGGING
+// ============================================================
 app.post('/api/chat', async (req, res) => {
     const { message, sessionId: incomingSessionId } = req.body;
 
@@ -998,125 +1423,140 @@ app.post('/api/chat', async (req, res) => {
         const session = sessionGetOrCreate(incomingSessionId);
         send({ sessionId: session.id });
 
-        const recentMessages = session.messages.slice(-(CONFIG.conversationHistorySize || 10));
-        const isFollowUp = userText.length < 30 &&
-            /^(terus|lanjut|trus|kalau|kalo|gimana|gmn|kok|apa|yang|iya|ya|dan|sama|juga|itu|tadi|tadinya|satunya|selain|lagi|masih|tapi|trs)/i.test(userText);
+        // STEP 1: CEK MEMORY
+        if (CONFIG.memoryEnabled) {
+            const memResult = memorySearch(userText, memoryItems, CONFIG.memoryMinScore || 40);
 
-        let enrichedQuery = userText;
-        if (isFollowUp && recentMessages.length > 0) {
-            const prevMessages = recentMessages.slice(-4).map(m => m.text).join(' ');
-            enrichedQuery = prevMessages + ' ' + userText;
-            console.log(`[CONTEXT] Follow-up terdeteksi. Query diperkaya.`);
-        }
+            if (memResult.item && memResult.isConfident) {
+                const relevant = validateMemoryRelevance(userText, memResult.item);
 
-        // 1. CEK MEMORY
-        const exactMatch = memorySearch(userText);
-        if (exactMatch.item && exactMatch.score >= CONFIG.memoryMinScore && !isFollowUp) {
-            exactMatch.item.hit += 1;
-            memorySave();
-            console.log(`[MEMORY HIT] score=${exactMatch.score} — "${userText.slice(0, 50)}"`);
-            sessionAddMessage(session.id, 'user', userText);
-            sessionAddMessage(session.id, 'bot', exactMatch.item.answer);
-            send({ meta: { source: 'memory', score: exactMatch.score, sessionId: session.id } });
-            const text = exactMatch.item.answer;
-            for (let i = 0; i < text.length; i += 5) {
-                send({ delta: text.slice(i, i + 5) });
-                await new Promise(r => setTimeout(r, 8));
+                if (relevant) {
+                    console.log(`[MEMORY HIT] skor ${memResult.score}`);
+                    memResult.item.hit = (memResult.item.hit || 0) + 1;
+                    memorySave();
+
+                    sessionAddMessage(session.id, 'user', userText);
+                    sessionAddMessage(session.id, 'bot', memResult.item.answer);
+
+                    send({ meta: { source: 'memory', score: memResult.score } });
+                    const text = cleanAIText(memResult.item.answer);
+                    for (let i = 0; i < text.length; i += 8) {
+                        send({ delta: text.slice(i, i + 8) });
+                        await new Promise(r => setTimeout(r, 10));
+                    }
+                    send({ done: true });
+                    return res.end();
+                }
             }
-            send({ done: true });
-            return res.end();
         }
 
-        // 2. KNOWLEDGE SEARCH
-        if (clients.length === 0) {
-            send({ error: 'Belum ada API key. Hubungi admin.' });
-            return res.end();
-        }
-
-        const searchResult = searchKnowledge(isFollowUp ? enrichedQuery : userText, 6);
+        // STEP 2: RAG
+        const searchResult = searchKnowledge(userText, 6);
         const relevant = searchResult.chunks;
         const confidence = searchResult.confidence;
         let ctx = '';
 
-        if (relevant.length === 0 || confidence < 70) {
-            const suggestions = getSuggestedTopics(8, userText);
-            send({ needSuggestions: true, suggestions: suggestions.map(t => t.title) });
-            console.log(`[RAG] Confidence ${confidence}, kirim ${suggestions.length} saran`);
-        }
-
         if (relevant.length > 0) {
-            ctx = '=== KONTEKS BUKU PENGETAHUAN ===\n' +
-                  relevant.map((c, i) => `[${i + 1}]\n${c.text}`).join('\n\n') +
+            ctx = '=== KONTEKS DARI BUKU PENGETAHUAN ===\n' +
+                  relevant.map((c, i) => `[Kutipan ${i + 1}]\n${c.text}`).join('\n\n') +
                   '\n=== AKHIR KONTEKS ===\n\n';
-            console.log(`[RAG] OK - ${relevant.length} chunk (confidence ${confidence})`);
+            console.log(`[RAG] OK — ${relevant.length} chunk (conf ${confidence})`);
         } else {
             console.log(`[RAG] KOSONG`);
+            const suggestions = getSuggestedTopics(6, userText);
+            send({ needSuggestions: true, suggestions: suggestions.map(t => t.title) });
         }
 
-        // 3. BANGUN CONTENTS DENGAN RIWAYAT
-        const contents = [];
-        if (CONFIG.conversationHistoryEnabled && recentMessages.length > 0) {
-            for (const m of recentMessages) {
-                contents.push({
-                    role: m.role === 'bot' ? 'model' : 'user',
-                    parts: [{ text: m.text }]
-                });
+        // STEP 3: Bangun conversation
+        const conversation = [];
+
+        if (CONFIG.conversationHistoryEnabled) {
+            const recent = session.messages.slice(-(CONFIG.conversationHistorySize || 10));
+            for (const m of recent) {
+                conversation.push({ role: m.role, text: m.text });
             }
         }
-        contents.push({
-            role: 'user',
-            parts: [{ text: (ctx || '') + 'Pertanyaan: ' + userText }]
-        });
 
-        // 4. STREAM
-        let ok = false;
-        let fullText = '';
+        const userMessageText = ctx
+            ? ctx + 'Pertanyaan user: ' + userText
+            : 'Pertanyaan user: ' + userText;
+
+        if (conversation.length === 0 || conversation[conversation.length - 1].role !== 'user') {
+            conversation.push({ role: 'user', text: userMessageText });
+        } else {
+            conversation[conversation.length - 1].text = userMessageText;
+        }
+
+        // STEP 4: Kirim ke AI
+        const enabledProviders = PROVIDERS_CONFIG.filter(p =>
+            p && p.enabled !== false && p.apiKey && String(p.apiKey).trim().length > 5
+        );
+
+        console.log(`[CHAT] Provider aktif: ${enabledProviders.length} dari ${PROVIDERS_CONFIG.length}`);
+
+        if (enabledProviders.length === 0) {
+            send({ error: 'Belum ada provider aktif. Aktifkan minimal 1 di dashboard admin → Provider AI.' });
+            return res.end();
+        }
+
+        send({ meta: { source: 'ai', context: relevant.length, confidence } });
+
+        let aiResult;
         try {
-            for await (const ev of streamGemini(contents)) {
-                send({
-                    meta: {
-                        source: 'gemini',
-                        model: ev.model,
-                        key: ev.key,
-                        context: relevant.length,
-                        confidence,
-                        historyCount: recentMessages.length,
-                        isFollowUp,
-                        sessionId: session.id
-                    }
-                });
-                for await (const chunk of ev.stream) {
-                    if (chunk?.text) {
-                        fullText += chunk.text;
-                        send({ delta: chunk.text });
-                    }
-                }
-                ok = true;
-                break;
-            }
+            aiResult = await callWithFallback(enabledProviders, {
+                systemPrompt: CONFIG.systemInstruction,
+                conversation,
+                fileData: null,
+                fileMimeType: null
+            });
         } catch (err) {
-            console.error('Stream error: ' + err.message);
-            send({ error: 'Server sibuk. Coba lagi nanti.' });
+            console.error('[AI] Semua provider gagal:', err.message);
+            send({ error: 'Semua provider AI gagal. Coba lagi atau tambah API key.' });
+            notifAddThrottled('all_fail', 'danger', 'Semua Provider Gagal',
+                'Cek API key di dashboard. ' + err.message.slice(0, 100), 'danger', 5 * 60 * 1000);
             return res.end();
         }
 
-        if (!ok) {
-            send({ error: 'Gagal dapat balasan.' });
-            return res.end();
+        console.log(`[AI OK] ${aiResult.provider} — ${aiResult.model}`);
+        send({ meta: { provider: aiResult.provider, model: aiResult.model } });
+
+        const text = cleanAIText(aiResult.text);
+        for (let i = 0; i < text.length; i += 8) {
+            send({ delta: text.slice(i, i + 8) });
+            await new Promise(r => setTimeout(r, 10));
         }
 
-        // 5. SIMPAN
         sessionAddMessage(session.id, 'user', userText);
-        sessionAddMessage(session.id, 'bot', fullText);
+        sessionAddMessage(session.id, 'bot', text);
 
-        if (!isFollowUp && fullText.length > 30 && relevant.length > 0 && confidence >= 70) {
-            memoryAdd(userText, fullText);
+        // STEP 5: Deteksi apakah AI benar-benar jawab atau menolak
+        const isRefusal = /belum ada di buku|belum ada di catatan|tidak tahu|tidak ada info|hubungi petugas langsung|belum yakin/i.test(text);
+
+        // ✅ LOG ke unanswered jika:
+        // - RAG kosong ATAU
+        // - confidence rendah (< 70) ATAU
+        // - AI menolak jawab (refusal)
+        if (relevant.length === 0 || confidence < 70 || isRefusal) {
+            unansweredAdd(userText, session.id);
+        }
+
+        // STEP 6: Simpan ke memori (hanya kalau jawaban valid dari RAG)
+        if (relevant.length > 0 && confidence >= 70 && !isRefusal) {
+            const addResult = memoryAdd(userText, text, memoryItems, CONFIG.memorySaveThreshold || 30);
+            if (addResult.added) {
+                memorySave();
+                console.log(`[MEMORY] Tersimpan`);
+            } else if (addResult.updated) {
+                memorySave();
+                console.log(`[MEMORY] Hit tambah`);
+            }
         }
 
         send({ done: true });
         res.end();
+
     } catch (e) {
-        console.error('Chat error: ' + e.message);
+        console.error('Chat error:', e.message);
         send({ error: 'Terjadi kesalahan.' });
         res.end();
     }
@@ -1133,11 +1573,16 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log('============================================');
     console.log(`SIVT AI siap di http://localhost:${PORT}`);
-    console.log(`Nama AI        : ${CONFIG.aiName}`);
-    console.log(`Model dipakai  : ${CONFIG.models.join(', ')}`);
-    console.log(`Jumlah API key : ${clients.length}`);
-    console.log(`Konteks chat   : ${CONFIG.conversationHistoryEnabled ? 'AKTIF' : 'MATI'} (${CONFIG.conversationHistorySize} pesan)`);
-    console.log(`Mode           : ${process.env.NODE_ENV || 'development'}`);
+    const activeCount = PROVIDERS_CONFIG.filter(p => p.enabled !== false).length;
+    console.log(`Provider AI    : ${PROVIDERS_CONFIG.length} terdaftar (${activeCount} aktif)`);
+    PROVIDERS_CONFIG.forEach((p, i) => {
+        const mark = p.enabled !== false ? '✓' : '✗';
+        const models = (p.models || []).slice(0, 2).join(', ');
+        console.log(`  ${i + 1}. [${mark}] ${p.name} → ${models}`);
+    });
+    console.log(`Memori         : ${memoryItems.length} item`);
+    console.log(`Knowledge      : ${knowledgeChunks.length} chunk`);
+    console.log(`Unanswered     : ${unansweredQuestions.filter(u => !u.resolved).length} pending`);
     console.log('============================================');
     memoryInit();
     sessionInit();

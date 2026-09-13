@@ -1,0 +1,25 @@
+{
+  "name": "SIVT AI - Sistem Informasi Virtual TEGALREJO",
+  "short_name": "SIVT AI",
+  "description": "Asisten virtual Kemantren Tegalrejo untuk layanan administrasi warga.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d47a1",
+  "theme_color": "#0d47a1",
+  "lang": "id",
+  "icons": [
+    {
+      "src": "/uploads/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/uploads/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

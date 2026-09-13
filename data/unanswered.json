@@ -1,0 +1,32 @@
+[
+  {
+    "id": "uq_1789289346913_p3s9",
+    "question": "Halo",
+    "sessionId": "sess_1789287542579_359l1fby",
+    "count": 1,
+    "firstAsked": "2026-09-13T08:49:06.913Z",
+    "lastAsked": "2026-09-13T08:49:06.915Z",
+    "resolved": true,
+    "resolvedAt": "2026-09-13T08:52:31.765Z"
+  },
+  {
+    "id": "uq_1789289370568_y68n",
+    "question": "iyah",
+    "sessionId": "sess_1789287542579_359l1fby",
+    "count": 1,
+    "firstAsked": "2026-09-13T08:49:30.568Z",
+    "lastAsked": "2026-09-13T08:49:30.568Z",
+    "resolved": true,
+    "resolvedAt": "2026-09-13T08:52:29.503Z"
+  },
+  {
+    "id": "uq_1789290373430_3hqd",
+    "question": "apa saratnya?",
+    "sessionId": "sess_1789287542579_359l1fby",
+    "count": 1,
+    "firstAsked": "2026-09-13T09:06:13.430Z",
+    "lastAsked": "2026-09-13T09:06:13.430Z",
+    "resolved": true,
+    "resolvedAt": "2026-09-13T09:28:27.866Z"
+  }
+]
