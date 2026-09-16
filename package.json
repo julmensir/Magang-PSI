@@ -1,26 +1,41 @@
 {
-  "name": "sivty-ai-chatbot",
+  "name": "sivt-ai-chatbot",
   "version": "2.0.0",
-  "description": "SIVTY AI - Chatbot multi-provider dengan RAG dan memori",
+  "description": "SIVT AI - Asisten Virtual Kemantren Tegalrejo dengan Anti-Halusinasi, Auto-Learning, Feedback, dan Multi-Provider AI",
   "main": "index.js",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
+    "sivt-ai",
+    "chatbot",
+    "kemantren",
+    "tegalrejo",
+    "yogyakarta",
     "gemini",
     "groq",
     "openrouter",
     "cerebras",
-    "ai",
-    "chatbot",
-    "layraga",
-    "multimodal",
-    "rag"
+    "together",
+    "mistral",
+    "deepseek",
+    "fireworks",
+    "xai",
+    "multi-provider",
+    "rag",
+    "anti-halusinasi",
+    "auto-learning",
+    "feedback",
+    "analytics",
+    "pwa"
   ],
-  "author": "User",
+  "author": "Kemantren Tegalrejo",
   "license": "ISC",
-  "type": "module",
   "dependencies": {
     "@google/genai": "^1.30.0",
     "adm-zip": "^0.6.1",

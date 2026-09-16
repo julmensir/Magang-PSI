@@ -682,3 +682,13 @@ Dokumen ini disusun untuk keperluan SIVT AI (Sistem Informasi Virtual TEGALREJO)
 Jika ada informasi yang perlu ditambahkan, hubungi admin Kemantren Tegalrejo.
 
 Kata kunci: info, informasi, keterangan, catatan, penjelasan, dokumentasi, bantuan, help
+
+## Siapa presiden Indonesia?
+
+Kata kunci : Siapa presiden Indonesia?
+
+Pertanyaan : Siapa presiden Indonesia?
+
+Jawaban : Persiden Kita sekrang 2026 ini adalah Parbowo dan dia menjabat sampai 2029
+
+Kategori : Presiden Indoesia

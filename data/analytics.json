@@ -1,0 +1,30 @@
+{
+  "totalChats": 117,
+  "totalAnswers": 14,
+  "totalRefusals": 7,
+  "totalMemoryHits": 43,
+  "totalRagHits": 52,
+  "totalOutOfScope": 1,
+  "dailyStats": {
+    "2026-09-13": {
+      "chats": 37,
+      "good": 22,
+      "bad": 7
+    },
+    "2026-09-14": {
+      "chats": 36,
+      "good": 21,
+      "bad": 2
+    },
+    "2026-09-15": {
+      "chats": 27,
+      "good": 3,
+      "bad": 1
+    },
+    "2026-09-16": {
+      "chats": 17,
+      "good": 4,
+      "bad": 0
+    }
+  }
+}

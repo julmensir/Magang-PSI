@@ -12,7 +12,9 @@
 </head>
 <body>
 
-<!-- CHAT PAGE -->
+<!-- ============================================================
+     CHAT PAGE
+     ============================================================ -->
 <div id="chatPage">
   <div class="chat-header">
     <div class="logo-icon" id="logoIcon">S</div>
@@ -35,7 +37,9 @@
   </form>
 </div>
 
-<!-- LOGIN PAGE -->
+<!-- ============================================================
+     LOGIN PAGE
+     ============================================================ -->
 <div id="loginPage">
   <div class="login-card">
     <div class="login-logo">
@@ -63,10 +67,13 @@
   </div>
 </div>
 
-<!-- ADMIN PAGE -->
+<!-- ============================================================
+     ADMIN PAGE
+     ============================================================ -->
 <div id="adminPage">
   <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
 
+  <!-- SIDEBAR -->
   <aside class="admin-sidebar" id="adminSidebar">
     <div class="sidebar-brand">
       <div class="brand-logo" id="sidebarLogo">S</div>
@@ -78,24 +85,60 @@
 
     <nav class="sidebar-nav">
       <div class="nav-section">UTAMA</div>
-      <a class="nav-item active" data-page="dashboard"><i class="fas fa-chart-line"></i><span>Dashboard</span></a>
-      <a class="nav-item" data-page="general"><i class="fas fa-sliders-h"></i><span>Umum</span></a>
-      <a class="nav-item" data-page="logo"><i class="fas fa-image"></i><span>Logo & Branding</span></a>
-      <a class="nav-item" data-page="theme"><i class="fas fa-palette"></i><span>Warna Tema</span></a>
+      <a class="nav-item active" data-page="dashboard">
+        <i class="fas fa-chart-line"></i><span>Dashboard</span>
+      </a>
+      <a class="nav-item" data-page="general">
+        <i class="fas fa-sliders-h"></i><span>Umum</span>
+      </a>
+      <a class="nav-item" data-page="logo">
+        <i class="fas fa-image"></i><span>Logo & Branding</span>
+      </a>
+      <a class="nav-item" data-page="theme">
+        <i class="fas fa-palette"></i><span>Warna Tema</span>
+      </a>
 
       <div class="nav-section">SISTEM</div>
-      <a class="nav-item" data-page="providers"><i class="fas fa-cloud"></i><span>Provider AI</span><span class="nav-badge" id="badgeProviders">0</span></a>
-      <a class="nav-item" data-page="prompt"><i class="fas fa-comment-dots"></i><span>Prompt AI</span></a>
+      <a class="nav-item" data-page="providers">
+        <i class="fas fa-cloud"></i><span>Provider AI</span>
+        <span class="nav-badge" id="badgeProviders">0</span>
+      </a>
+      <a class="nav-item" data-page="prompt">
+        <i class="fas fa-comment-dots"></i><span>Prompt AI</span>
+      </a>
 
-      <div class="nav-section">DATA</div>
-      <a class="nav-item" data-page="knowledge"><i class="fas fa-book"></i><span>Pengetahuan</span><span class="nav-badge" id="badgeKnowledge">0</span></a>
-      <a class="nav-item" data-page="unanswered"><i class="fas fa-question-circle"></i><span>Tak Terjawab</span><span class="nav-badge nav-badge-warning" id="badgeUnanswered">0</span></a>
-      <a class="nav-item" data-page="memory"><i class="fas fa-brain"></i><span>Memori AI</span><span class="nav-badge" id="badgeMemory">0</span></a>
-      <a class="nav-item" data-page="sessions"><i class="fas fa-comments"></i><span>Percakapan</span><span class="nav-badge" id="badgeSessions">0</span></a>
+      <div class="nav-section">OTAK AI</div>
+      <a class="nav-item" data-page="knowledge">
+        <i class="fas fa-book"></i><span>Pengetahuan</span>
+        <span class="nav-badge" id="badgeKnowledge">0</span>
+      </a>
+      <a class="nav-item" data-page="unanswered">
+        <i class="fas fa-question-circle"></i><span>Tak Terjawab</span>
+        <span class="nav-badge nav-badge-warning" id="badgeUnanswered">0</span>
+      </a>
+      <a class="nav-item" data-page="learning">
+        <i class="fas fa-brain"></i><span>Auto-Learning</span>
+        <span class="nav-badge nav-badge-warning" id="badgeLearning">0</span>
+      </a>
+      <a class="nav-item" data-page="feedback">
+        <i class="fas fa-star"></i><span>Feedback & Akurasi</span>
+      </a>
+      <a class="nav-item" data-page="memory">
+        <i class="fas fa-lightbulb"></i><span>Memori AI</span>
+        <span class="nav-badge" id="badgeMemory">0</span>
+      </a>
+      <a class="nav-item" data-page="sessions">
+        <i class="fas fa-comments"></i><span>Percakapan</span>
+        <span class="nav-badge" id="badgeSessions">0</span>
+      </a>
 
       <div class="nav-section">PENGATURAN</div>
-      <a class="nav-item" data-page="backup"><i class="fas fa-database"></i><span>Backup</span></a>
-      <a class="nav-item" data-page="security"><i class="fas fa-shield-alt"></i><span>Keamanan</span></a>
+      <a class="nav-item" data-page="backup">
+        <i class="fas fa-database"></i><span>Backup</span>
+      </a>
+      <a class="nav-item" data-page="security">
+        <i class="fas fa-shield-alt"></i><span>Keamanan</span>
+      </a>
     </nav>
 
     <div class="sidebar-footer">
@@ -109,6 +152,7 @@
     </div>
   </aside>
 
+  <!-- MAIN -->
   <main class="admin-main">
     <header class="main-header">
       <button class="btn-toggle-sidebar" onclick="toggleSidebar()">
@@ -116,10 +160,14 @@
       </button>
       <h2 class="main-title" id="pageTitle">Dashboard</h2>
       <div class="main-header-right">
-        <button class="btn-icon" onclick="loadCurrentPage()" title="Refresh"><i class="fas fa-sync-alt"></i></button>
-        <button class="btn-icon" onclick="showChat()" title="Ke Chat"><i class="fas fa-comments"></i></button>
+        <button class="btn-icon" onclick="loadCurrentPage()" title="Refresh">
+          <i class="fas fa-sync-alt"></i>
+        </button>
+        <button class="btn-icon" onclick="showChat()" title="Ke Chat">
+          <i class="fas fa-comments"></i>
+        </button>
 
-        <!-- ✅ NOTIFIKASI DI KANAN ATAS -->
+        <!-- NOTIFIKASI DROPDOWN -->
         <div class="notif-wrapper">
           <button class="btn-icon notif-bell" onclick="toggleNotifDropdown()" title="Notifikasi">
             <i class="fas fa-bell"></i>
@@ -129,8 +177,12 @@
             <div class="notif-header">
               <span><i class="fas fa-bell"></i> Notifikasi</span>
               <div class="notif-header-actions">
-                <button onclick="markAllRead()" title="Tandai semua dibaca"><i class="fas fa-check-double"></i></button>
-                <button onclick="clearNotifications()" title="Hapus semua"><i class="fas fa-trash"></i></button>
+                <button onclick="markAllRead()" title="Tandai semua dibaca">
+                  <i class="fas fa-check-double"></i>
+                </button>
+                <button onclick="clearNotifications()" title="Hapus semua">
+                  <i class="fas fa-trash"></i>
+                </button>
               </div>
             </div>
             <div class="notif-body" id="notifBody">
@@ -148,19 +200,20 @@
 
     <div class="main-content">
 
-      <!-- PAGE: DASHBOARD -->
+      <!-- ============================================================
+           PAGE: DASHBOARD
+           ============================================================ -->
       <div class="page active" id="page-dashboard">
         <div class="dash-welcome">
           <div class="dash-welcome-text">
             <h1>Selamat Datang di <span id="dashAiName">SIVT AI</span> 👋</h1>
-            <p>Dashboard ringkasan semua aktivitas aplikasi Anda</p>
+            <p>Dashboard ringkasan semua aktivitas AI Anda</p>
           </div>
           <div class="dash-welcome-meta">
             <div><i class="fas fa-clock"></i> Uptime: <strong id="dashUptime">-</strong></div>
           </div>
         </div>
 
-        <!-- STAT CARDS -->
         <div class="stat-grid">
           <div class="stat-card stat-blue">
             <div class="stat-icon"><i class="fas fa-cloud"></i></div>
@@ -189,12 +242,32 @@
             </div>
           </div>
 
-          <div class="stat-card stat-orange">
+          <div class="stat-card stat-teal">
             <div class="stat-icon"><i class="fas fa-comments"></i></div>
             <div class="stat-info">
               <div class="stat-value" id="statSessions">0</div>
               <div class="stat-label">Sesi Aktif</div>
               <div class="stat-sub" id="statSessionsSub">-</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-card stat-pink">
+            <div class="stat-icon"><i class="fas fa-star"></i></div>
+            <div class="stat-info">
+              <div class="stat-value" id="statFeedback">0%</div>
+              <div class="stat-label">Kepuasan User</div>
+              <div class="stat-sub" id="statFeedbackSub">-</div>
+            </div>
+          </div>
+
+          <div class="stat-card stat-green">
+            <div class="stat-icon"><i class="fas fa-check-double"></i></div>
+            <div class="stat-info">
+              <div class="stat-value" id="statAccuracy">0%</div>
+              <div class="stat-label">Akurasi Jawaban</div>
+              <div class="stat-sub" id="statAccuracySub">-</div>
             </div>
           </div>
 
@@ -207,7 +280,7 @@
             </div>
           </div>
 
-          <div class="stat-card stat-teal">
+          <div class="stat-card stat-orange">
             <div class="stat-icon"><i class="fas fa-bell"></i></div>
             <div class="stat-info">
               <div class="stat-value" id="statNotif">0</div>
@@ -217,10 +290,11 @@
           </div>
         </div>
 
-        <!-- CHART -->
         <div class="dash-row">
           <div class="card">
-            <div class="card-header"><i class="fas fa-chart-bar"></i><span>Aktivitas 7 Hari Terakhir</span></div>
+            <div class="card-header">
+              <i class="fas fa-chart-bar"></i><span>Aktivitas 7 Hari Terakhir</span>
+            </div>
             <div class="card-body">
               <div class="chart-wrap" id="chartWrap">
                 <div class="empty-state">Memuat data...</div>
@@ -229,14 +303,28 @@
           </div>
 
           <div class="card">
-            <div class="card-header"><i class="fas fa-server"></i><span>Status Provider</span></div>
+            <div class="card-header">
+              <i class="fas fa-server"></i><span>Status Provider</span>
+            </div>
             <div class="card-body">
-              <div id="providerStatusList"><div class="empty-state">Memuat...</div></div>
+              <div id="providerStatusList">
+                <div class="empty-state">Memuat...</div>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- QUICK ACTIONS -->
+        <div class="card">
+          <div class="card-header">
+            <i class="fas fa-brain"></i><span>Antrian Belajar AI</span>
+          </div>
+          <div class="card-body">
+            <div id="learningHighlight">
+              <div class="empty-state">Memuat data...</div>
+            </div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-header"><i class="fas fa-bolt"></i><span>Aksi Cepat</span></div>
           <div class="card-body">
@@ -248,7 +336,13 @@
                 <i class="fas fa-upload"></i><span>Upload Pengetahuan</span>
               </button>
               <button class="quick-action-btn" onclick="showPage('unanswered')">
-                <i class="fas fa-question-circle"></i><span>Lihat Tak Terjawab</span>
+                <i class="fas fa-question-circle"></i><span>Pertanyaan Tak Terjawab</span>
+              </button>
+              <button class="quick-action-btn" onclick="showPage('learning')">
+                <i class="fas fa-brain"></i><span>Antrian Belajar</span>
+              </button>
+              <button class="quick-action-btn" onclick="showPage('feedback')">
+                <i class="fas fa-star"></i><span>Lihat Feedback</span>
               </button>
               <button class="quick-action-btn" onclick="showPage('sessions')">
                 <i class="fas fa-comments"></i><span>Cek Percakapan</span>
@@ -264,7 +358,9 @@
         </div>
       </div>
 
-      <!-- PAGE: GENERAL -->
+      <!-- ============================================================
+           PAGE: GENERAL
+           ============================================================ -->
       <div class="page" id="page-general">
         <div class="card">
           <div class="card-header"><i class="fas fa-tag"></i><span>Identitas AI</span></div>
@@ -321,7 +417,9 @@
         </div>
       </div>
 
-      <!-- PAGE: LOGO -->
+      <!-- ============================================================
+           PAGE: LOGO
+           ============================================================ -->
       <div class="page" id="page-logo">
         <div class="card">
           <div class="card-header"><i class="fas fa-image"></i><span>Logo Aplikasi</span></div>
@@ -336,7 +434,7 @@
               </div>
               <div class="logo-upload-info">
                 <h4>Upload Logo</h4>
-                <p>Format: PNG, JPG, GIF, WEBP, SVG. Maksimal 2 MB.</p>
+                <p>Format: PNG, JPG, GIF, WEBP, SVG. Maksimal 2 MB. Rekomendasi PNG transparan 512×512.</p>
                 <input type="file" id="logoFile" accept="image/*" style="display: none;" onchange="uploadLogo()">
                 <button class="btn-primary-lg" onclick="document.getElementById('logoFile').click()">
                   <i class="fas fa-upload"></i> Pilih File Logo
@@ -353,22 +451,37 @@
             <div class="form-group">
               <label>Ukuran Logo</label>
               <div class="logo-size-options">
-                <label class="logo-size-option"><input type="radio" name="logoSize" value="small" onchange="changeLogoSize('small')"><span>Kecil</span></label>
-                <label class="logo-size-option"><input type="radio" name="logoSize" value="medium" onchange="changeLogoSize('medium')"><span>Sedang</span></label>
-                <label class="logo-size-option"><input type="radio" name="logoSize" value="large" onchange="changeLogoSize('large')"><span>Besar</span></label>
-                <label class="logo-size-option"><input type="radio" name="logoSize" value="xlarge" onchange="changeLogoSize('xlarge')"><span>Extra Besar</span></label>
+                <label class="logo-size-option">
+                  <input type="radio" name="logoSize" value="small" onchange="changeLogoSize('small')">
+                  <span>Kecil</span>
+                </label>
+                <label class="logo-size-option">
+                  <input type="radio" name="logoSize" value="medium" onchange="changeLogoSize('medium')">
+                  <span>Sedang</span>
+                </label>
+                <label class="logo-size-option">
+                  <input type="radio" name="logoSize" value="large" onchange="changeLogoSize('large')">
+                  <span>Besar</span>
+                </label>
+                <label class="logo-size-option">
+                  <input type="radio" name="logoSize" value="xlarge" onchange="changeLogoSize('xlarge')">
+                  <span>Extra Besar</span>
+                </label>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- PAGE: THEME -->
+      <!-- ============================================================
+           PAGE: THEME
+           ============================================================ -->
       <div class="page" id="page-theme">
         <div class="card">
           <div class="card-header"><i class="fas fa-palette"></i><span>Warna Tema Aplikasi</span></div>
           <div class="card-body">
-            <p class="text-muted">Ubah warna sesuai selera.</p>
+            <p class="text-muted">Ubah warna sesuai selera. Perubahan langsung terlihat setelah disimpan.</p>
+
             <div class="form-grid">
               <div class="form-group">
                 <label>Warna Utama (Primary)</label>
@@ -377,6 +490,7 @@
                   <input type="text" id="theme-primary-text" oninput="syncColorFromText('primary')">
                 </div>
               </div>
+
               <div class="form-group">
                 <label>Warna Utama Gelap</label>
                 <div class="color-input-row">
@@ -384,6 +498,7 @@
                   <input type="text" id="theme-primaryDark-text" oninput="syncColorFromText('primaryDark')">
                 </div>
               </div>
+
               <div class="form-group">
                 <label>Warna Aksen</label>
                 <div class="color-input-row">
@@ -391,6 +506,7 @@
                   <input type="text" id="theme-accent-text" oninput="syncColorFromText('accent')">
                 </div>
               </div>
+
               <div class="form-group">
                 <label>Sidebar Awal</label>
                 <div class="color-input-row">
@@ -398,6 +514,7 @@
                   <input type="text" id="theme-sidebarStart-text" oninput="syncColorFromText('sidebarStart')">
                 </div>
               </div>
+
               <div class="form-group">
                 <label>Sidebar Akhir</label>
                 <div class="color-input-row">
@@ -420,121 +537,220 @@
             </div>
 
             <div class="action-bar mt-4">
-              <button class="btn-primary-lg" onclick="saveTheme()"><i class="fas fa-save"></i> Simpan Tema</button>
-              <button class="btn-secondary" onclick="resetTheme()"><i class="fas fa-undo"></i> Reset</button>
+              <button class="btn-primary-lg" onclick="saveTheme()">
+                <i class="fas fa-save"></i> Simpan Tema
+              </button>
+              <button class="btn-secondary" onclick="resetTheme()">
+                <i class="fas fa-undo"></i> Reset
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- PAGE: PROVIDERS -->
+      <!-- ============================================================
+           PAGE: PROVIDERS (BUILT-IN + CUSTOM)
+           ============================================================ -->
       <div class="page" id="page-providers">
         <div class="card">
-          <div class="card-header"><i class="fas fa-plus"></i><span>Tambah Provider AI</span></div>
+          <div class="card-header">
+            <i class="fas fa-plus"></i>
+            <span>Tambah Provider AI</span>
+          </div>
           <div class="card-body">
-            <p class="text-muted">Tambah API key dari berbagai provider AI. Sistem otomatis fallback jika salah satu gagal.</p>
+            <p class="text-muted">
+              Pilih provider terdaftar, atau tambahkan <b>provider custom</b> dengan
+              <b>Custom Endpoint</b> jika ingin pakai provider OpenAI-compatible lainnya.
+            </p>
 
-            <div class="provider-help">
-              <strong>Cara dapat API key gratis:</strong>
-              <ul>
-                <li><b>Gemini</b>: <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com/app/apikey</a></li>
-                <li><b>Groq</b>: <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a> (14.400 req/hari!)</li>
-                <li><b>OpenRouter</b>: <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></li>
-                <li><b>Cerebras</b>: <a href="https://cloud.cerebras.ai" target="_blank">cloud.cerebras.ai</a></li>
-                <li><b>Together</b>: <a href="https://api.together.xyz" target="_blank">api.together.xyz</a></li>
-                <li><b>Mistral</b>: <a href="https://console.mistral.ai" target="_blank">console.mistral.ai</a></li>
-              </ul>
+            <!-- TAB PILIHAN -->
+            <div class="filter-tabs" style="margin-bottom:20px;">
+              <button class="filter-tab active" data-mode="builtin" onclick="switchProviderMode('builtin')">
+                <i class="fas fa-list"></i> Provider Terdaftar
+              </button>
+              <button class="filter-tab" data-mode="custom" onclick="switchProviderMode('custom')">
+                <i class="fas fa-cog"></i> Provider Custom
+              </button>
             </div>
 
-            <div class="form-grid">
-              <div class="form-group">
-                <label>Provider</label>
-                <select id="newProviderName">
-                  <option value="gemini">Gemini (Google)</option>
-                  <option value="groq">Groq (Llama 3.3 70B)</option>
-                  <option value="openrouter">OpenRouter</option>
-                  <option value="cerebras">Cerebras</option>
-                  <option value="together">Together AI</option>
-                  <option value="mistral">Mistral AI</option>
-                </select>
+            <!-- MODE: BUILT-IN -->
+            <div id="providerMode-builtin">
+              <div class="provider-help">
+                <strong>Cara dapat API key gratis:</strong>
+                <ul>
+                  <li><b>Gemini</b>: <a href="https://aistudio.google.com/app/apikey" target="_blank">aistudio.google.com/app/apikey</a></li>
+                  <li><b>Groq</b>: <a href="https://console.groq.com/keys" target="_blank">console.groq.com/keys</a></li>
+                  <li><b>OpenRouter</b>: <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a></li>
+                  <li><b>Cerebras</b>: <a href="https://cloud.cerebras.ai" target="_blank">cloud.cerebras.ai</a></li>
+                  <li><b>Together</b>: <a href="https://api.together.xyz" target="_blank">api.together.xyz</a></li>
+                  <li><b>Mistral</b>: <a href="https://console.mistral.ai" target="_blank">console.mistral.ai</a></li>
+                  <li><b>DeepSeek</b>: <a href="https://platform.deepseek.com" target="_blank">platform.deepseek.com</a></li>
+                  <li><b>xAI Grok</b>: <a href="https://console.x.ai" target="_blank">console.x.ai</a></li>
+                </ul>
               </div>
-              <div class="form-group">
-                <label>API Key</label>
-                <input type="text" id="newProviderKey" placeholder="Tempel API key...">
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Provider</label>
+                  <select id="newProviderName">
+                    <option value="gemini">Gemini (Google)</option>
+                    <option value="groq">Groq</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="cerebras">Cerebras</option>
+                    <option value="together">Together AI</option>
+                    <option value="mistral">Mistral AI</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="fireworks">Fireworks AI</option>
+                    <option value="xai">xAI Grok</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label>API Key</label>
+                  <input type="text" id="newProviderKey" placeholder="Tempel API key...">
+                </div>
+
+                <div class="form-group full">
+                  <label>Models <small>(pisah koma, kosongkan untuk default)</small></label>
+                  <input type="text" id="newProviderModels" placeholder="contoh: llama-3.3-70b-versatile,llama-3.1-8b-instant">
+                </div>
               </div>
-              <div class="form-group full">
-                <label>Models <small>(pisah koma, kosongkan untuk default)</small></label>
-                <input type="text" id="newProviderModels" placeholder="contoh: llama-3.3-70b-versatile,llama-3.1-8b-instant">
+            </div>
+
+            <!-- MODE: CUSTOM -->
+            <div id="providerMode-custom" style="display:none;">
+              <div class="provider-help">
+                <strong>Provider Custom OpenAI-Compatible:</strong>
+                Isi endpoint dengan format <code>https://api.contoh.com/v1</code>.
+                Sistem akan otomatis kirim request ke <code>{endpoint}/chat/completions</code>.
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>Nama Provider <span class="text-danger">*</span></label>
+                  <input type="text" id="customProviderName" placeholder="contoh: myprovider">
+                </div>
+
+                <div class="form-group">
+                  <label>Display Name</label>
+                  <input type="text" id="customProviderDisplay" placeholder="contoh: My AI Provider">
+                </div>
+
+                <div class="form-group full">
+                  <label>Custom Endpoint <span class="text-danger">*</span></label>
+                  <input type="text" id="customProviderEndpoint" placeholder="https://api.contoh.com/v1">
+                </div>
+
+                <div class="form-group full">
+                  <label>API Key <span class="text-danger">*</span></label>
+                  <input type="text" id="customProviderKey" placeholder="Tempel API key...">
+                </div>
+
+                <div class="form-group full">
+                  <label>Models <small>(pisah koma)</small></label>
+                  <input type="text" id="customProviderModels" placeholder="contoh: gpt-4,gpt-3.5-turbo">
+                </div>
               </div>
             </div>
 
             <div class="action-bar">
-              <button class="btn-primary-lg" onclick="addProvider()"><i class="fas fa-plus"></i> Tambah Provider</button>
+              <button class="btn-primary-lg" onclick="addProvider()">
+                <i class="fas fa-plus"></i> Tambah Provider
+              </button>
             </div>
+
             <div id="addProviderStatus" class="status-msg"></div>
           </div>
         </div>
 
         <div class="card">
-          <div class="card-header"><i class="fas fa-list"></i><span>Daftar Provider</span></div>
+          <div class="card-header">
+            <i class="fas fa-list"></i><span>Daftar Provider</span>
+          </div>
           <div class="card-body" id="providersList"></div>
         </div>
       </div>
 
-      <!-- PAGE: PROMPT -->
+      <!-- ============================================================
+           PAGE: PROMPT
+           ============================================================ -->
       <div class="page" id="page-prompt">
         <div class="card">
           <div class="card-header"><i class="fas fa-comment-dots"></i><span>System Instruction</span></div>
           <div class="card-body">
-            <p class="text-muted">Instruksi ini mengatur kepribadian & aturan AI.</p>
+            <p class="text-muted">Instruksi ini mengatur kepribadian & aturan AI. Semakin ketat aturannya, semakin akurat jawabannya.</p>
             <textarea id="cfg-systemInstruction" rows="20" class="prompt-textarea"></textarea>
-            <button class="btn-primary-lg" onclick="savePrompt()"><i class="fas fa-save"></i> Simpan Prompt</button>
+            <button class="btn-primary-lg" onclick="savePrompt()">
+              <i class="fas fa-save"></i> Simpan Prompt
+            </button>
           </div>
         </div>
       </div>
 
-      <!-- PAGE: KNOWLEDGE -->
+      <!-- ============================================================
+           PAGE: KNOWLEDGE
+           ============================================================ -->
       <div class="page" id="page-knowledge">
         <div class="card">
           <div class="card-header"><i class="fas fa-upload"></i><span>Upload File Pengetahuan</span></div>
           <div class="card-body">
-            <p class="text-muted">Format: <b>.md</b> atau <b>.txt</b>.</p>
+            <p class="text-muted">Format: <b>.md</b> atau <b>.txt</b>. Setiap topik dipisah baris kosong atau heading <code>##</code>.</p>
             <input type="file" id="knowledgeFile" accept=".md,.txt" class="form-input">
             <div class="action-bar">
-              <button class="btn-primary-lg" onclick="uploadKnowledge()"><i class="fas fa-upload"></i> Upload</button>
-              <button class="btn-secondary" onclick="reloadKnowledge()"><i class="fas fa-sync"></i> Reload</button>
+              <button class="btn-primary-lg" onclick="uploadKnowledge()">
+                <i class="fas fa-upload"></i> Upload
+              </button>
+              <button class="btn-secondary" onclick="reloadKnowledge()">
+                <i class="fas fa-sync"></i> Reload
+              </button>
             </div>
             <div id="uploadStatus" class="status-msg"></div>
           </div>
         </div>
+
         <div class="card">
           <div class="card-header"><i class="fas fa-file-alt"></i><span>File Pengetahuan</span></div>
           <div class="card-body" id="knowledgeFilesList"></div>
         </div>
       </div>
 
-      <!-- PAGE: UNANSWERED -->
+      <!-- ============================================================
+           PAGE: UNANSWERED
+           ============================================================ -->
       <div class="page" id="page-unanswered">
         <div class="card">
-          <div class="card-header"><i class="fas fa-question-circle"></i><span>Pertanyaan Yang Tidak Terjawab AI</span></div>
+          <div class="card-header">
+            <i class="fas fa-question-circle"></i>
+            <span>Pertanyaan Yang Tidak Terjawab AI</span>
+          </div>
           <div class="card-body">
-            <p class="text-muted">Daftar pertanyaan warga yang tidak bisa dijawab AI karena tidak ada di buku pengetahuan. Tambahkan jawabannya supaya AI bisa menjawab ke depannya.</p>
+            <p class="text-muted">
+              Daftar pertanyaan warga yang tidak bisa dijawab AI karena tidak ada di buku pengetahuan.
+              Tambahkan jawabannya supaya AI bisa menjawab ke depannya.
+            </p>
 
             <div class="filter-tabs">
               <button class="filter-tab active" data-filter="pending" onclick="filterUnanswered('pending')">
-                <i class="fas fa-hourglass-half"></i> Belum Dijawab <span id="filterPendingCount" class="filter-count">0</span>
+                <i class="fas fa-hourglass-half"></i> Belum Dijawab
+                <span id="filterPendingCount" class="filter-count">0</span>
               </button>
               <button class="filter-tab" data-filter="resolved" onclick="filterUnanswered('resolved')">
-                <i class="fas fa-check-circle"></i> Sudah Dijawab <span id="filterResolvedCount" class="filter-count">0</span>
+                <i class="fas fa-check-circle"></i> Sudah Dijawab
+                <span id="filterResolvedCount" class="filter-count">0</span>
               </button>
               <button class="filter-tab" data-filter="all" onclick="filterUnanswered('all')">
-                <i class="fas fa-list"></i> Semua <span id="filterAllCount" class="filter-count">0</span>
+                <i class="fas fa-list"></i> Semua
+                <span id="filterAllCount" class="filter-count">0</span>
               </button>
             </div>
 
             <div class="action-bar">
-              <button class="btn-secondary" onclick="loadUnanswered()"><i class="fas fa-sync"></i> Refresh</button>
-              <button class="btn-danger-outline" onclick="clearResolvedUnanswered()"><i class="fas fa-broom"></i> Hapus Yang Sudah Dijawab</button>
+              <button class="btn-secondary" onclick="loadUnanswered()">
+                <i class="fas fa-sync"></i> Refresh
+              </button>
+              <button class="btn-danger-outline" onclick="clearResolvedUnanswered()">
+                <i class="fas fa-broom"></i> Hapus Yang Sudah Dijawab
+              </button>
             </div>
 
             <div id="unansweredList"></div>
@@ -542,119 +758,413 @@
         </div>
       </div>
 
-      <!-- PAGE: MEMORY -->
+      <!-- ============================================================
+           PAGE: LEARNING QUEUE
+           ============================================================ -->
+      <div class="page" id="page-learning">
+        <div class="card">
+          <div class="card-header">
+            <i class="fas fa-brain"></i>
+            <span>Auto-Learning Queue</span>
+          </div>
+          <div class="card-body">
+            <p class="text-muted">
+              Pertanyaan yang sering ditanya warga tapi belum ada di buku pengetahuan.
+              AI otomatis menaikkan prioritas berdasarkan frekuensi.
+            </p>
+
+            <div class="stat-grid" style="margin-bottom:20px;">
+              <div class="stat-card stat-blue">
+                <div class="stat-icon"><i class="fas fa-list"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="learningTotal">0</div>
+                  <div class="stat-label">Total Antrian</div>
+                </div>
+              </div>
+
+              <div class="stat-card stat-orange">
+                <div class="stat-icon"><i class="fas fa-hourglass-half"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="learningPending">0</div>
+                  <div class="stat-label">Pending</div>
+                </div>
+              </div>
+
+              <div class="stat-card stat-red">
+                <div class="stat-icon"><i class="fas fa-fire"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="learningUrgent">0</div>
+                  <div class="stat-label">Urgent</div>
+                </div>
+              </div>
+
+              <div class="stat-card stat-green">
+                <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="learningResolved">0</div>
+                  <div class="stat-label">Selesai</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="filter-tabs">
+              <button class="filter-tab active" data-filter="pending" onclick="filterLearning('pending')">
+                <i class="fas fa-hourglass-half"></i> Pending
+                <span id="learningFilterPendingCount" class="filter-count">0</span>
+              </button>
+              <button class="filter-tab" data-filter="urgent" onclick="filterLearning('urgent')">
+                <i class="fas fa-fire"></i> Urgent
+                <span id="learningFilterUrgentCount" class="filter-count">0</span>
+              </button>
+              <button class="filter-tab" data-filter="high" onclick="filterLearning('high')">
+                <i class="fas fa-exclamation-triangle"></i> Prioritas Tinggi
+                <span id="learningFilterHighCount" class="filter-count">0</span>
+              </button>
+              <button class="filter-tab" data-filter="all" onclick="filterLearning('all')">
+                <i class="fas fa-list"></i> Semua
+                <span id="learningFilterAllCount" class="filter-count">0</span>
+              </button>
+            </div>
+
+            <div class="action-bar">
+              <button class="btn-secondary" onclick="loadLearningQueue()">
+                <i class="fas fa-sync"></i> Refresh
+              </button>
+              <button class="btn-secondary" onclick="clearResolvedLearning()">
+                <i class="fas fa-broom"></i> Hapus Yang Selesai
+              </button>
+              <button class="btn-danger-outline" onclick="clearAllLearning()">
+                <i class="fas fa-trash"></i> Hapus Semua
+              </button>
+            </div>
+
+            <div id="learningList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================
+           PAGE: FEEDBACK & AKURASI
+           ============================================================ -->
+      <div class="page" id="page-feedback">
+        <div class="card">
+          <div class="card-header">
+            <i class="fas fa-star"></i>
+            <span>Feedback & Akurasi AI</span>
+          </div>
+          <div class="card-body">
+            <p class="text-muted">
+              Statistik kepuasan user dan akurasi jawaban AI. Semakin tinggi, semakin pintar AI Anda.
+            </p>
+
+            <div class="stat-grid">
+              <div class="stat-card stat-blue">
+                <div class="stat-icon"><i class="fas fa-comments"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="fbTotal">0</div>
+                  <div class="stat-label">Total Feedback</div>
+                </div>
+              </div>
+
+              <div class="stat-card stat-green">
+                <div class="stat-icon"><i class="fas fa-thumbs-up"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="fbGood">0</div>
+                  <div class="stat-label">Bagus 👍</div>
+                </div>
+              </div>
+
+              <div class="stat-card stat-red">
+                <div class="stat-icon"><i class="fas fa-thumbs-down"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="fbBad">0</div>
+                  <div class="stat-label">Kurang 👎</div>
+                </div>
+              </div>
+
+              <div class="stat-card stat-purple">
+                <div class="stat-icon"><i class="fas fa-star"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="fbSatisfaction">0%</div>
+                  <div class="stat-label">Kepuasan</div>
+                </div>
+              </div>
+            </div>
+
+            <h6 class="fw-bold mt-4 mb-3" style="color:var(--primary-dark);">
+              <i class="fas fa-chart-pie"></i> Analytics
+            </h6>
+            <div class="stat-grid">
+              <div class="stat-card stat-blue">
+                <div class="stat-icon"><i class="fas fa-comment-dots"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="anTotalChats">0</div>
+                  <div class="stat-label">Total Chat</div>
+                </div>
+              </div>
+
+              <div class="stat-card stat-green">
+                <div class="stat-icon"><i class="fas fa-check-circle"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="anTotalAnswers">0</div>
+                  <div class="stat-label">Jawaban Diberikan</div>
+                </div>
+              </div>
+
+              <div class="stat-card stat-red">
+                <div class="stat-icon"><i class="fas fa-times-circle"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="anRefusals">0</div>
+                  <div class="stat-label">Penolakan</div>
+                </div>
+              </div>
+
+              <div class="stat-card stat-purple">
+                <div class="stat-icon"><i class="fas fa-bullseye"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="anAccuracy">0%</div>
+                  <div class="stat-label">Akurasi</div>
+                </div>
+              </div>
+
+              <div class="stat-card stat-teal">
+                <div class="stat-icon"><i class="fas fa-brain"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="anMemoryHits">0</div>
+                  <div class="stat-label">Memory Hits</div>
+                </div>
+              </div>
+
+              <div class="stat-card stat-orange">
+                <div class="stat-icon"><i class="fas fa-book"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="anRagHits">0</div>
+                  <div class="stat-label">RAG Hits</div>
+                </div>
+              </div>
+
+              <div class="stat-card stat-pink">
+                <div class="stat-icon"><i class="fas fa-shield-alt"></i></div>
+                <div class="stat-info">
+                  <div class="stat-value" id="anOutOfScope">0</div>
+                  <div class="stat-label">Out of Scope</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:20px;">
+              <div class="card-header">
+                <i class="fas fa-chart-bar"></i><span>Feedback 7 Hari Terakhir</span>
+              </div>
+              <div class="card-body">
+                <div class="chart-wrap" id="feedbackChart">
+                  <div class="empty-state">Memuat data...</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="filter-tabs" style="margin-top:20px;">
+              <button class="filter-tab active" data-filter="all" onclick="filterFeedback('all')">
+                <i class="fas fa-list"></i> Semua
+              </button>
+              <button class="filter-tab" data-filter="good" onclick="filterFeedback('good')">
+                <i class="fas fa-thumbs-up"></i> Bagus
+              </button>
+              <button class="filter-tab" data-filter="bad" onclick="filterFeedback('bad')">
+                <i class="fas fa-thumbs-down"></i> Kurang
+              </button>
+            </div>
+
+            <div class="action-bar">
+              <button class="btn-secondary" onclick="loadFeedback()">
+                <i class="fas fa-sync"></i> Refresh
+              </button>
+              <button class="btn-danger-outline" onclick="clearFeedback()">
+                <i class="fas fa-trash"></i> Hapus Feedback
+              </button>
+              <button class="btn-danger-outline" onclick="clearAnalytics()">
+                <i class="fas fa-redo"></i> Reset Analytics
+              </button>
+            </div>
+
+            <div id="feedbackList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================================
+           PAGE: MEMORY
+           ============================================================ -->
       <div class="page" id="page-memory">
         <div class="card">
-          <div class="card-header"><i class="fas fa-brain"></i><span>Pengaturan Memori</span></div>
+          <div class="card-header"><i class="fas fa-lightbulb"></i><span>Pengaturan Memori</span></div>
           <div class="card-body">
             <div class="switch-row">
-              <label class="switch"><input type="checkbox" id="memoryEnabled"><span class="slider"></span></label>
+              <label class="switch">
+                <input type="checkbox" id="memoryEnabled">
+                <span class="slider"></span>
+              </label>
               <span>Aktifkan memori otomatis</span>
             </div>
+
             <div class="form-grid">
               <div class="form-group">
-                <label>Min skor pakai memori <small>(default 40)</small></label>
+                <label>Min skor pakai memori <small>(default 60)</small></label>
                 <input type="number" id="memoryMinScore">
               </div>
               <div class="form-group">
-                <label>Min skor simpan baru <small>(default 30)</small></label>
+                <label>Min skor simpan baru <small>(default 40)</small></label>
                 <input type="number" id="memorySaveThreshold">
               </div>
             </div>
+
             <div class="action-bar">
-              <button class="btn-primary-lg" onclick="saveMemorySettings()"><i class="fas fa-save"></i> Simpan</button>
-              <button class="btn-secondary" onclick="reloadMemory()"><i class="fas fa-sync"></i> Reload</button>
-              <button class="btn-danger-outline" onclick="clearMemory()"><i class="fas fa-trash"></i> Hapus Semua</button>
+              <button class="btn-primary-lg" onclick="saveMemorySettings()">
+                <i class="fas fa-save"></i> Simpan
+              </button>
+              <button class="btn-secondary" onclick="reloadMemory()">
+                <i class="fas fa-sync"></i> Reload
+              </button>
+              <button class="btn-danger-outline" onclick="clearMemory()">
+                <i class="fas fa-trash"></i> Hapus Semua
+              </button>
             </div>
           </div>
         </div>
+
         <div class="card">
           <div class="card-header"><i class="fas fa-comments"></i><span>Konteks Percakapan</span></div>
           <div class="card-body">
             <div class="switch-row">
-              <label class="switch"><input type="checkbox" id="convEnabled"><span class="slider"></span></label>
+              <label class="switch">
+                <input type="checkbox" id="convEnabled">
+                <span class="slider"></span>
+              </label>
               <span>Aktifkan konteks percakapan</span>
             </div>
             <div class="form-grid">
-              <div class="form-group"><label>Jumlah pesan diingat</label><input type="number" id="convSize" min="2" max="30"></div>
-              <div class="form-group"><label>Rate limit per-sesi (pesan/menit)</label><input type="number" id="rateLimitPerSession" min="5" max="100"></div>
+              <div class="form-group">
+                <label>Jumlah pesan diingat</label>
+                <input type="number" id="convSize" min="2" max="30">
+              </div>
+              <div class="form-group">
+                <label>Rate limit per-sesi (pesan/menit)</label>
+                <input type="number" id="rateLimitPerSession" min="5" max="100">
+              </div>
             </div>
-            <button class="btn-primary-lg" onclick="saveConversationSettings()"><i class="fas fa-save"></i> Simpan</button>
+            <button class="btn-primary-lg" onclick="saveConversationSettings()">
+              <i class="fas fa-save"></i> Simpan
+            </button>
           </div>
         </div>
+
         <div class="card">
           <div class="card-header"><i class="fas fa-list"></i><span>Daftar Memori</span></div>
           <div class="card-body" id="memoryList"></div>
         </div>
       </div>
 
-      <!-- PAGE: SESSIONS -->
+      <!-- ============================================================
+           PAGE: SESSIONS
+           ============================================================ -->
       <div class="page" id="page-sessions">
         <div class="card">
           <div class="card-header"><i class="fas fa-comments"></i><span>Percakapan Aktif</span></div>
           <div class="card-body">
             <p class="text-muted">Sesi percakapan (2 jam terakhir).</p>
             <div class="action-bar">
-              <button class="btn-secondary" onclick="loadSessions()"><i class="fas fa-sync"></i> Refresh</button>
-              <button class="btn-danger-outline" onclick="clearSessions()"><i class="fas fa-trash"></i> Hapus Semua</button>
+              <button class="btn-secondary" onclick="loadSessions()">
+                <i class="fas fa-sync"></i> Refresh
+              </button>
+              <button class="btn-danger-outline" onclick="clearSessions()">
+                <i class="fas fa-trash"></i> Hapus Semua
+              </button>
             </div>
             <div id="sessionsList"></div>
           </div>
         </div>
       </div>
 
-      <!-- PAGE: NOTIFICATIONS -->
+      <!-- ============================================================
+           PAGE: NOTIFICATIONS
+           ============================================================ -->
       <div class="page" id="page-notifications">
         <div class="card">
           <div class="card-header"><i class="fas fa-bell"></i><span>Notifikasi Sistem</span></div>
           <div class="card-body">
             <div class="action-bar">
-              <button class="btn-secondary" onclick="loadNotifications()"><i class="fas fa-sync"></i> Refresh</button>
-              <button class="btn-primary" onclick="markAllRead()"><i class="fas fa-check"></i> Tandai Dibaca</button>
-              <button class="btn-danger-outline" onclick="clearNotifications()"><i class="fas fa-trash"></i> Hapus</button>
+              <button class="btn-secondary" onclick="loadNotifications()">
+                <i class="fas fa-sync"></i> Refresh
+              </button>
+              <button class="btn-primary" onclick="markAllRead()">
+                <i class="fas fa-check"></i> Tandai Dibaca
+              </button>
+              <button class="btn-danger-outline" onclick="clearNotifications()">
+                <i class="fas fa-trash"></i> Hapus
+              </button>
             </div>
             <div id="notificationsList"></div>
           </div>
         </div>
       </div>
 
-      <!-- PAGE: BACKUP -->
+      <!-- ============================================================
+           PAGE: BACKUP
+           ============================================================ -->
       <div class="page" id="page-backup">
         <div class="card">
           <div class="card-header"><i class="fas fa-database"></i><span>Backup Otomatis</span></div>
           <div class="card-body">
             <p class="text-muted">Backup otomatis setiap hari jam 02.00. File dienkripsi AES-256.</p>
             <div class="action-bar">
-              <button class="btn-primary-lg" onclick="runBackupNow()"><i class="fas fa-download"></i> Backup Sekarang</button>
-              <button class="btn-secondary" onclick="loadBackups()"><i class="fas fa-list"></i> Lihat Daftar</button>
+              <button class="btn-primary-lg" onclick="runBackupNow()">
+                <i class="fas fa-download"></i> Backup Sekarang
+              </button>
+              <button class="btn-secondary" onclick="loadBackups()">
+                <i class="fas fa-list"></i> Lihat Daftar
+              </button>
             </div>
             <div id="backupsList"></div>
           </div>
         </div>
       </div>
 
-      <!-- PAGE: SECURITY -->
+      <!-- ============================================================
+           PAGE: SECURITY
+           ============================================================ -->
       <div class="page" id="page-security">
         <div class="card">
           <div class="card-header"><i class="fas fa-key"></i><span>Ganti Password Admin</span></div>
           <div class="card-body">
             <div class="form-grid">
-              <div class="form-group"><label>Password Lama</label><input type="password" id="oldPassword"></div>
-              <div class="form-group"><label>Password Baru (min 8 karakter)</label><input type="password" id="newPassword"></div>
+              <div class="form-group">
+                <label>Password Lama</label>
+                <input type="password" id="oldPassword">
+              </div>
+              <div class="form-group">
+                <label>Password Baru (min 8 karakter)</label>
+                <input type="password" id="newPassword">
+              </div>
             </div>
-            <button class="btn-primary-lg" onclick="changePassword()"><i class="fas fa-key"></i> Ganti Password</button>
+            <button class="btn-primary-lg" onclick="changePassword()">
+              <i class="fas fa-key"></i> Ganti Password
+            </button>
             <div id="passwordStatus" class="status-msg"></div>
           </div>
         </div>
+
         <div class="card">
           <div class="card-header"><i class="fas fa-info-circle"></i><span>Info Keamanan</span></div>
           <div class="card-body">
             <ul class="info-list">
               <li><i class="fas fa-check-circle text-success"></i> Login pakai JWT (30 hari) + bcrypt</li>
-              <li><i class="fas fa-check-circle text-success"></i> Sesi login tersimpan</li>
+              <li><i class="fas fa-check-circle text-success"></i> Sesi login tersimpan — tidak logout saat refresh/restart</li>
               <li><i class="fas fa-check-circle text-success"></i> API key terenkripsi AES-256-GCM</li>
               <li><i class="fas fa-check-circle text-success"></i> Backup dienkripsi AES-256</li>
               <li><i class="fas fa-check-circle text-success"></i> Multi-provider dengan fallback otomatis</li>
+              <li><i class="fas fa-check-circle text-success"></i> Classifier anti-halusinasi aktif</li>
+              <li><i class="fas fa-check-circle text-success"></i> Provider Custom OpenAI-compatible</li>
+              <li><i class="fas fa-check-circle text-success"></i> Feedback user & auto-learning aktif</li>
             </ul>
           </div>
         </div>
@@ -664,12 +1174,16 @@
   </main>
 </div>
 
-<!-- MODAL: TAMBAH JAWABAN KE PENGETAHUAN -->
+<!-- ============================================================
+     MODAL: TAMBAH JAWABAN KE PENGETAHUAN
+     ============================================================ -->
 <div class="modal-overlay" id="answerModal" onclick="closeAnswerModal(event)">
   <div class="modal-card">
     <div class="modal-header">
       <h3><i class="fas fa-plus-circle"></i> Tambahkan Jawaban ke Pengetahuan</h3>
-      <button class="modal-close" onclick="closeAnswerModal()"><i class="fas fa-times"></i></button>
+      <button class="modal-close" onclick="closeAnswerModal()">
+        <i class="fas fa-times"></i>
+      </button>
     </div>
     <div class="modal-body">
       <div class="form-group">
@@ -682,9 +1196,10 @@
       </div>
       <div class="form-group">
         <label>Jawaban Lengkap <span class="text-danger">*</span></label>
-        <textarea id="modal-answer" rows="8" placeholder="Tulis jawaban lengkap untuk pertanyaan ini..."></textarea>
+        <textarea id="modal-answer" rows="8" placeholder="Tulis jawaban lengkap untuk pertanyaan ini... Minimal 20 karakter."></textarea>
       </div>
       <input type="hidden" id="modal-id">
+      <input type="hidden" id="modal-source">
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeAnswerModal()">Batal</button>

@@ -1,1 +1,173 @@
-[]
+[
+  {
+    "id": "notif_1789297686172_wu9s",
+    "type": "info",
+    "title": "Provider AKTIF",
+    "message": "Google Gemini → AKTIF",
+    "level": "info",
+    "timestamp": "2026-09-13T11:08:06.172Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789297692082_esp7",
+    "type": "info",
+    "title": "Provider NONAKTIF",
+    "message": "Google Gemini → NONAKTIF",
+    "level": "info",
+    "timestamp": "2026-09-13T11:08:12.082Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789298113427_400u",
+    "type": "danger",
+    "title": "Semua Provider Gagal",
+    "message": "Cek API key di dashboard.",
+    "level": "danger",
+    "timestamp": "2026-09-13T11:15:13.427Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789300186208_xw95",
+    "type": "info",
+    "title": "Pengetahuan Ditambahkan",
+    "message": "Pertanyaan \"Siapa presiden Indonesia?\" dari learning queue berhasil ditambahkan",
+    "level": "info",
+    "timestamp": "2026-09-13T11:49:46.208Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789301678685_t4oh",
+    "type": "info",
+    "title": "Provider Ditambahkan",
+    "message": "Groq berhasil ditambahkan",
+    "level": "info",
+    "timestamp": "2026-09-13T12:14:38.685Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789301861191_v5ew",
+    "type": "info",
+    "title": "Provider NONAKTIF",
+    "message": "Groq → NONAKTIF",
+    "level": "info",
+    "timestamp": "2026-09-13T12:17:41.191Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789301863886_yeam",
+    "type": "info",
+    "title": "Provider AKTIF",
+    "message": "Groq → AKTIF",
+    "level": "info",
+    "timestamp": "2026-09-13T12:17:43.886Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789369654370_utcg",
+    "type": "info",
+    "title": "Provider Ditambahkan",
+    "message": "Groq berhasil ditambahkan",
+    "level": "info",
+    "timestamp": "2026-09-14T07:07:34.370Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789369675077_hqcl",
+    "type": "info",
+    "title": "API Key Diperbarui",
+    "message": "Provider #1 API key diupdate",
+    "level": "info",
+    "timestamp": "2026-09-14T07:07:55.077Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789369999311_4w5s",
+    "type": "info",
+    "title": "Provider Ditambahkan",
+    "message": "DeepSeek berhasil ditambahkan",
+    "level": "info",
+    "timestamp": "2026-09-14T07:13:19.311Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789370586667_wbdq",
+    "type": "info",
+    "title": "Provider Ditambahkan",
+    "message": "Google Gemini berhasil ditambahkan",
+    "level": "info",
+    "timestamp": "2026-09-14T07:23:06.667Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789370627698_iatf",
+    "type": "info",
+    "title": "Provider NONAKTIF",
+    "message": "Google Gemini → NONAKTIF",
+    "level": "info",
+    "timestamp": "2026-09-14T07:23:47.703Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789370631530_r8gx",
+    "type": "info",
+    "title": "Provider AKTIF",
+    "message": "Google Gemini → AKTIF",
+    "level": "info",
+    "timestamp": "2026-09-14T07:23:51.530Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789370939564_3wto",
+    "type": "info",
+    "title": "Provider Ditambahkan",
+    "message": "Mistral AI berhasil ditambahkan",
+    "level": "info",
+    "timestamp": "2026-09-14T07:28:59.564Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789370951667_61j8",
+    "type": "info",
+    "title": "Provider NONAKTIF",
+    "message": "Mistral AI → NONAKTIF",
+    "level": "info",
+    "timestamp": "2026-09-14T07:29:11.667Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789370953474_62m1",
+    "type": "info",
+    "title": "Provider AKTIF",
+    "message": "Mistral AI → AKTIF",
+    "level": "info",
+    "timestamp": "2026-09-14T07:29:13.474Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789371046326_0997",
+    "type": "info",
+    "title": "API Key Diperbarui",
+    "message": "Provider #4 API key diupdate",
+    "level": "info",
+    "timestamp": "2026-09-14T07:30:46.326Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789454516163_vro2",
+    "type": "info",
+    "title": "Logo Diperbarui",
+    "message": "Logo berhasil diupload",
+    "level": "info",
+    "timestamp": "2026-09-15T06:41:56.163Z",
+    "read": true
+  },
+  {
+    "id": "notif_1789454634280_b844",
+    "type": "info",
+    "title": "Logo Diperbarui",
+    "message": "Logo berhasil diupload",
+    "level": "info",
+    "timestamp": "2026-09-15T06:43:54.280Z",
+    "read": true
+  }
+]

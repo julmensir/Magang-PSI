@@ -1,9 +1,16 @@
+// ============================================================
+// SIVT AI — Frontend Script (Ultimate Version - Final)
+// ============================================================
+
 let currentUser = null;
 let adminToken = null;
 let chatSessionId = null;
 let currentPage = 'dashboard';
 let currentTheme = null;
 let currentUnansweredFilter = 'pending';
+let currentLearningFilter = 'pending';
+let currentFeedbackFilter = 'all';
+let currentProviderMode = 'builtin';
 
 // ============================================================
 // LOGO SIZES
@@ -32,7 +39,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    // Tutup dropdown notifikasi kalau klik di luar
     document.addEventListener('click', (e) => {
         const wrap = document.querySelector('.notif-wrapper');
         const dropdown = document.getElementById('notifDropdown');
@@ -65,7 +71,6 @@ async function checkAdminSession() {
             document.getElementById('adminPage').style.display = 'block';
             await loadAdminConfig();
             showPage('dashboard');
-            // Polling notifikasi tiap 30 detik
             setInterval(loadNotificationsBadge, 30000);
             console.log('[AUTH] Session dipulihkan:', data.username);
         }
@@ -312,9 +317,15 @@ function showPage(page) {
         dashboard: 'Dashboard',
         general: 'Umum', logo: 'Logo & Branding', theme: 'Warna Tema',
         providers: 'Provider AI', prompt: 'Prompt AI',
-        knowledge: 'Pengetahuan', unanswered: 'Pertanyaan Tak Terjawab',
-        memory: 'Memori AI', sessions: 'Percakapan',
-        notifications: 'Notifikasi', backup: 'Backup', security: 'Keamanan'
+        knowledge: 'Pengetahuan',
+        unanswered: 'Pertanyaan Tak Terjawab',
+        learning: 'Auto-Learning',
+        feedback: 'Feedback & Akurasi',
+        memory: 'Memori AI',
+        sessions: 'Percakapan',
+        notifications: 'Notifikasi',
+        backup: 'Backup',
+        security: 'Keamanan'
     };
     document.getElementById('pageTitle').textContent = titles[page] || page;
 
@@ -335,6 +346,8 @@ function loadCurrentPage() {
     if (page === 'memory') loadMemoryList();
     if (page === 'theme') loadThemeToForm();
     if (page === 'unanswered') loadUnanswered();
+    if (page === 'learning') loadLearningQueue();
+    if (page === 'feedback') loadFeedback();
 }
 
 function toggleSidebar() {
@@ -477,14 +490,16 @@ function addEmptyBotMessage() {
     bubble.appendChild(time);
     chatBox.appendChild(bubble);
     chatBox.scrollTop = chatBox.scrollHeight;
-    return textNode;
+    return { bubble, textNode };
 }
 
 async function getBotResponse(question) {
-    const botTextEl = addEmptyBotMessage();
+    const { bubble, textNode: botTextEl } = addEmptyBotMessage();
     let fullText = '';
     let pendingSuggestions = null;
     let sourceInfo = '';
+    let metaInfo = { provider: null, model: null, source: null };
+    let isError = false;
 
     try {
         const response = await fetch('/api/chat', {
@@ -519,8 +534,15 @@ async function getBotResponse(question) {
                 if (obj.meta) {
                     if (obj.meta.source === 'memory') {
                         sourceInfo = '<i class="fas fa-brain"></i> dijawab dari memori';
+                        metaInfo.source = 'memory';
+                    } else if (obj.meta.source === 'redirect') {
+                        sourceInfo = '<i class="fas fa-shield-alt"></i> pertanyaan di luar topik';
+                        metaInfo.source = 'redirect';
                     } else if (obj.meta.provider) {
                         sourceInfo = `<i class="fas fa-cloud"></i> ${obj.meta.provider} — ${obj.meta.model}`;
+                        metaInfo.provider = obj.meta.provider;
+                        metaInfo.model = obj.meta.model;
+                        metaInfo.source = 'ai';
                     }
                 }
 
@@ -531,6 +553,7 @@ async function getBotResponse(question) {
                 } else if (obj.needSuggestions) {
                     pendingSuggestions = obj.suggestions;
                 } else if (obj.error) {
+                    isError = true;
                     botTextEl.textContent = 'Error: ' + obj.error;
                 }
             }
@@ -540,14 +563,74 @@ async function getBotResponse(question) {
             const note = document.createElement('div');
             note.style.cssText = 'font-size: 10px; color: var(--primary); margin-top: 6px; opacity: 0.8;';
             note.innerHTML = sourceInfo;
-            botTextEl.parentElement.appendChild(note);
+            bubble.appendChild(note);
+        }
+
+        if (!isError && fullText.length > 20 && metaInfo.source !== 'redirect') {
+            addFeedbackButtons(bubble, question, fullText, metaInfo);
         }
 
         if (pendingSuggestions && Array.isArray(pendingSuggestions) && pendingSuggestions.length > 0) {
             showSuggestions(pendingSuggestions);
         }
     } catch (err) {
+        isError = true;
         botTextEl.textContent = 'Maaf, terjadi kesalahan: ' + err.message;
+    }
+}
+
+// ============================================================
+// FEEDBACK BUTTONS
+// ============================================================
+function addFeedbackButtons(bubble, question, answer, meta) {
+    const fb = document.createElement('div');
+    fb.className = 'feedback-buttons';
+    fb.innerHTML = `
+        <span class="fb-label">Bermanfaat?</span>
+        <button class="fb-btn fb-good" title="Jawaban bagus">
+            <i class="fas fa-thumbs-up"></i>
+        </button>
+        <button class="fb-btn fb-bad" title="Jawaban kurang tepat">
+            <i class="fas fa-thumbs-down"></i>
+        </button>
+    `;
+
+    fb.dataset.question = question;
+    fb.dataset.answer = answer.slice(0, 500);
+
+    fb.querySelector('.fb-good').onclick = (e) => sendFeedback(e.target.closest('button'), 'good', fb, meta);
+    fb.querySelector('.fb-bad').onclick = (e) => sendFeedback(e.target.closest('button'), 'bad', fb, meta);
+
+    bubble.appendChild(fb);
+}
+
+async function sendFeedback(btn, rating, container, meta) {
+    const question = container.dataset.question;
+    const answer = container.dataset.answer;
+
+    try {
+        await fetch('/api/feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                question,
+                answer,
+                rating,
+                sessionId: chatSessionId,
+                provider: meta.provider,
+                model: meta.model,
+                source: meta.source
+            })
+        });
+
+        container.innerHTML = rating === 'good'
+            ? '<span class="fb-thanks fb-thanks-good"><i class="fas fa-check-circle"></i> Terima kasih!</span>'
+            : '<span class="fb-thanks fb-thanks-bad"><i class="fas fa-clipboard-check"></i> Kami akan perbaiki</span>';
+
+        console.log(`[FEEDBACK] ${rating} untuk: "${question.slice(0, 50)}"`);
+    } catch (err) {
+        console.error('Feedback error:', err);
+        container.innerHTML = '<span class="fb-thanks" style="color:var(--danger);">Gagal kirim</span>';
     }
 }
 
@@ -669,7 +752,6 @@ async function loadDashboard() {
         const m = Math.floor((uptime % 3600) / 60);
         document.getElementById('dashUptime').textContent = h > 0 ? `${h}j ${m}m` : `${m}m`;
 
-        // Stat cards
         document.getElementById('statProviders').textContent = data.providers.total;
         document.getElementById('statProvidersSub').textContent =
             `${data.providers.active} aktif, ${data.providers.inactive} off`;
@@ -694,11 +776,23 @@ async function loadDashboard() {
         document.getElementById('statNotifSub').textContent =
             `dari ${data.notifications.total} total`;
 
-        // Chart
-        renderChart(data.sessions.daily);
+        const statFeedback = document.getElementById('statFeedback');
+        if (statFeedback && data.feedback) {
+            statFeedback.textContent = data.feedback.satisfactionRate + '%';
+            document.getElementById('statFeedbackSub').textContent =
+                `${data.feedback.good} 👍 / ${data.feedback.bad} 👎`;
+        }
 
-        // Provider status
+        const statAccuracy = document.getElementById('statAccuracy');
+        if (statAccuracy && data.analytics) {
+            statAccuracy.textContent = data.analytics.accuracyRate + '%';
+            document.getElementById('statAccuracySub').textContent =
+                `${data.analytics.totalRefusals} penolakan`;
+        }
+
+        renderChart(data.sessions.daily);
         renderProviderStatus(data.providers.list);
+        renderLearningHighlight(data.learning);
     } catch (err) {
         console.error('Gagal load dashboard:', err);
     }
@@ -706,6 +800,7 @@ async function loadDashboard() {
 
 function renderChart(daily) {
     const el = document.getElementById('chartWrap');
+    if (!el) return;
     if (!daily || daily.length === 0) {
         el.innerHTML = '<div class="empty-state">Belum ada data</div>';
         return;
@@ -728,6 +823,7 @@ function renderChart(daily) {
 
 function renderProviderStatus(list) {
     const el = document.getElementById('providerStatusList');
+    if (!el) return;
     if (!list || list.length === 0) {
         el.innerHTML = '<div class="empty-state">Belum ada provider</div>';
         return;
@@ -749,8 +845,31 @@ function renderProviderStatus(list) {
     el.innerHTML = html;
 }
 
+function renderLearningHighlight(learning) {
+    const el = document.getElementById('learningHighlight');
+    if (!el || !learning) return;
+    if (learning.pending === 0) {
+        el.innerHTML = '<div class="empty-state">Tidak ada pertanyaan pending ✅</div>';
+        return;
+    }
+    el.innerHTML = `
+        <div class="learning-highlight-content">
+            <div class="learning-stat-big">${learning.pending}</div>
+            <div class="learning-stat-label">Pertanyaan perlu diperhatikan</div>
+            <div class="learning-stat-breakdown">
+                ${learning.urgent > 0 ? `<span class="badge badge-danger">${learning.urgent} urgent</span>` : ''}
+                ${learning.high > 0 ? `<span class="badge badge-warning">${learning.high} tinggi</span>` : ''}
+                ${learning.medium > 0 ? `<span class="badge badge-primary">${learning.medium} sedang</span>` : ''}
+            </div>
+            <button class="btn-primary-lg" style="margin-top:14px;" onclick="showPage('learning')">
+                <i class="fas fa-arrow-right"></i> Lihat Learning Queue
+            </button>
+        </div>
+    `;
+}
+
 // ============================================================
-// NOTIFIKASI — DROPDOWN KANAN ATAS
+// NOTIFIKASI DROPDOWN
 // ============================================================
 function toggleNotifDropdown() {
     const dropdown = document.getElementById('notifDropdown');
@@ -839,36 +958,53 @@ async function loadAdminConfig() {
         const res = await adminFetch('/api/admin/config');
         const cfg = await res.json();
 
-        document.getElementById('cfg-aiName').value = cfg.aiName || '';
-        document.getElementById('cfg-tagline').value = cfg.tagline || '';
-        document.getElementById('cfg-welcomeMessage').value = cfg.welcomeMessage || '';
-        document.getElementById('cfg-contact-address').value = cfg.contactInfo?.address || '';
-        document.getElementById('cfg-contact-phone').value = cfg.contactInfo?.phone || '';
-        document.getElementById('cfg-contact-whatsapp').value = cfg.contactInfo?.whatsapp || '';
-        document.getElementById('cfg-contact-email').value = cfg.contactInfo?.email || '';
-        document.getElementById('cfg-contact-hours').value = cfg.contactInfo?.hours || '';
-        document.getElementById('cfg-systemInstruction').value = cfg.systemInstruction || '';
+        const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+        setVal('cfg-aiName', cfg.aiName);
+        setVal('cfg-tagline', cfg.tagline);
+        setVal('cfg-welcomeMessage', cfg.welcomeMessage);
+        setVal('cfg-contact-address', cfg.contactInfo?.address);
+        setVal('cfg-contact-phone', cfg.contactInfo?.phone);
+        setVal('cfg-contact-whatsapp', cfg.contactInfo?.whatsapp);
+        setVal('cfg-contact-email', cfg.contactInfo?.email);
+        setVal('cfg-contact-hours', cfg.contactInfo?.hours);
+        setVal('cfg-systemInstruction', cfg.systemInstruction);
 
-        document.getElementById('memoryEnabled').checked = cfg.memoryEnabled !== false;
-        document.getElementById('memoryMinScore').value = cfg.memoryMinScore || 40;
-        document.getElementById('memorySaveThreshold').value = cfg.memorySaveThreshold || 30;
-        document.getElementById('convEnabled').checked = cfg.conversationHistoryEnabled !== false;
-        document.getElementById('convSize').value = cfg.conversationHistorySize || 10;
-        document.getElementById('rateLimitPerSession').value = cfg.rateLimitPerSession || 20;
+        const cb = (id, v) => { const el = document.getElementById(id); if (el) el.checked = v; };
+        cb('memoryEnabled', cfg.memoryEnabled !== false);
+        cb('convEnabled', cfg.conversationHistoryEnabled !== false);
+
+        setVal('memoryMinScore', cfg.memoryMinScore || 60);
+        setVal('memorySaveThreshold', cfg.memorySaveThreshold || 40);
+        setVal('convSize', cfg.conversationHistorySize || 10);
+        setVal('rateLimitPerSession', cfg.rateLimitPerSession || 20);
 
         updateLogoPreview(cfg.logoUrl);
         const sizeRadio = document.querySelector(`input[name="logoSize"][value="${cfg.logoSize || 'medium'}"]`);
         if (sizeRadio) sizeRadio.checked = true;
 
-        document.getElementById('badgeProviders').textContent = (cfg.providers || []).length;
-        document.getElementById('badgeKnowledge').textContent = cfg.knowledgeChunks || 0;
-        document.getElementById('badgeMemory').textContent = cfg.memoryCount || 0;
-        document.getElementById('badgeSessions').textContent = cfg.sessionCount || 0;
+        const setBadge = (id, v) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.textContent = v;
+                el.style.display = v > 0 ? 'inline-flex' : 'none';
+            }
+        };
 
-        const unansweredBadge = document.getElementById('badgeUnanswered');
-        if (unansweredBadge) {
-            unansweredBadge.textContent = cfg.pendingUnanswered || 0;
-            unansweredBadge.style.display = (cfg.pendingUnanswered || 0) > 0 ? 'inline-flex' : 'none';
+        setBadge('badgeProviders', (cfg.providers || []).length);
+        setBadge('badgeKnowledge', cfg.knowledgeChunks || 0);
+        setBadge('badgeMemory', cfg.memoryCount || 0);
+        setBadge('badgeSessions', cfg.sessionCount || 0);
+
+        const badgeUnanswered = document.getElementById('badgeUnanswered');
+        if (badgeUnanswered) {
+            badgeUnanswered.textContent = cfg.pendingUnanswered || 0;
+            badgeUnanswered.style.display = (cfg.pendingUnanswered || 0) > 0 ? 'inline-flex' : 'none';
+        }
+
+        const badgeLearning = document.getElementById('badgeLearning');
+        if (badgeLearning) {
+            badgeLearning.textContent = cfg.pendingLearning || 0;
+            badgeLearning.style.display = (cfg.pendingLearning || 0) > 0 ? 'inline-flex' : 'none';
         }
 
         renderProviders(cfg.providers || []);
@@ -877,10 +1013,25 @@ async function loadAdminConfig() {
 }
 
 // ============================================================
-// PROVIDERS
+// PROVIDER MODE SWITCH (BUILT-IN vs CUSTOM)
+// ============================================================
+function switchProviderMode(mode) {
+    currentProviderMode = mode;
+    document.querySelectorAll('#page-providers .filter-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.mode === mode);
+    });
+    const builtIn = document.getElementById('providerMode-builtin');
+    const custom = document.getElementById('providerMode-custom');
+    if (builtIn) builtIn.style.display = mode === 'builtin' ? 'block' : 'none';
+    if (custom) custom.style.display = mode === 'custom' ? 'block' : 'none';
+}
+
+// ============================================================
+// PROVIDERS LIST
 // ============================================================
 function renderProviders(providers) {
     const el = document.getElementById('providersList');
+    if (!el) return;
     if (providers.length === 0) {
         el.innerHTML = '<div class="empty-state">Belum ada provider. Tambahkan API key di atas.</div>';
         return;
@@ -895,16 +1046,21 @@ function renderProviders(providers) {
             ? '<span class="badge badge-success">✓ Aktif</span>'
             : '<span class="badge badge-secondary">✗ Off</span>';
 
+        const customTag = p.isCustom
+            ? ' <span class="badge badge-warning" style="font-size:9px;">CUSTOM</span>'
+            : '';
+
         html += `<tr>
             <td>${p.index + 1}</td>
-            <td><strong>${p.displayName}</strong></td>
+            <td><strong>${p.displayName}</strong>${customTag}</td>
             <td style="font-size:11px"><code>${(p.models || []).join(', ')}</code></td>
             <td><code>${p.masked}</code></td>
             <td>${statusBadge}</td>
             <td style="white-space:nowrap">
-                <button class="btn-icon-sm btn-info" onclick="testProvider(${p.index})" title="Test"><i class="fas fa-vial"></i></button>
-                <button class="btn-icon-sm btn-primary" onclick="editProviderModels(${p.index}, '${(p.models || []).join(',')}')" title="Edit"><i class="fas fa-edit"></i></button>
-                <button class="btn-icon-sm btn-warning" onclick="toggleProvider(${p.index})" title="On/Off"><i class="fas fa-power-off"></i></button>
+                <button class="btn-icon-sm btn-info" onclick="testProvider(${p.index})" title="Test Koneksi"><i class="fas fa-vial"></i></button>
+                <button class="btn-icon-sm btn-primary" onclick="editProviderModels(${p.index}, '${(p.models || []).join(',')}')" title="Edit Model"><i class="fas fa-edit"></i></button>
+                <button class="btn-icon-sm btn-warning" onclick="editProviderKey(${p.index})" title="Edit API Key"><i class="fas fa-key"></i></button>
+                <button class="btn-icon-sm btn-secondary" onclick="toggleProvider(${p.index})" title="On/Off"><i class="fas fa-power-off"></i></button>
                 <button class="btn-icon-sm btn-danger" onclick="removeProvider(${p.index})" title="Hapus"><i class="fas fa-trash"></i></button>
             </td>
         </tr>`;
@@ -914,27 +1070,58 @@ function renderProviders(providers) {
     el.innerHTML = html;
 }
 
+
+// ============================================================
+// ADD PROVIDER (Support Built-in & Custom)
+// ============================================================
 async function addProvider() {
-    const name = document.getElementById('newProviderName').value;
-    const apiKey = document.getElementById('newProviderKey').value.trim();
-    const modelsRaw = document.getElementById('newProviderModels').value.trim();
+    const isCustom = currentProviderMode === 'custom';
 
-    if (!apiKey) return alert('API key harus diisi');
+    let payload;
+    if (isCustom) {
+        const name = document.getElementById('customProviderName').value.trim();
+        const displayName = document.getElementById('customProviderDisplay').value.trim();
+        const endpoint = document.getElementById('customProviderEndpoint').value.trim();
+        const apiKey = document.getElementById('customProviderKey').value.trim();
+        const modelsRaw = document.getElementById('customProviderModels').value.trim();
 
-    const models = modelsRaw ? modelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+        if (!name) return alert('Nama provider wajib diisi');
+        if (!endpoint) return alert('Custom Endpoint wajib diisi');
+        if (!apiKey) return alert('API Key wajib diisi');
+
+        const models = modelsRaw ? modelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+        if (models.length === 0) return alert('Minimal 1 model wajib diisi');
+
+        payload = { name, apiKey, models, customEndpoint: endpoint, displayName };
+    } else {
+        const name = document.getElementById('newProviderName').value;
+        const apiKey = document.getElementById('newProviderKey').value.trim();
+        const modelsRaw = document.getElementById('newProviderModels').value.trim();
+
+        if (!apiKey) return alert('API key harus diisi');
+
+        const models = modelsRaw ? modelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+        payload = { name, apiKey, models };
+    }
+
     const status = document.getElementById('addProviderStatus');
     status.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menambahkan...';
 
     try {
         const res = await adminFetch('/api/admin/providers/add', {
             method: 'POST',
-            body: JSON.stringify({ name, apiKey, models })
+            body: JSON.stringify(payload)
         });
         const data = await res.json();
         if (data.success) {
             status.innerHTML = '<span class="text-success">✅ Ditambahkan. Total: ' + data.total + '</span>';
             document.getElementById('newProviderKey').value = '';
             document.getElementById('newProviderModels').value = '';
+            document.getElementById('customProviderName').value = '';
+            document.getElementById('customProviderDisplay').value = '';
+            document.getElementById('customProviderEndpoint').value = '';
+            document.getElementById('customProviderKey').value = '';
+            document.getElementById('customProviderModels').value = '';
             loadAdminConfig();
         } else {
             status.innerHTML = '<span class="text-danger">' + data.message + '</span>';
@@ -944,6 +1131,52 @@ async function addProvider() {
     }
 }
 
+// ============================================================
+// EDIT API KEY
+// ============================================================
+async function editProviderKey(index) {
+    const input = prompt('Masukkan API key baru untuk provider ini:');
+    if (!input || input.trim().length < 5) return alert('API key tidak valid');
+
+    try {
+        const res = await adminFetch('/api/admin/providers/update-key', {
+            method: 'POST',
+            body: JSON.stringify({ index, apiKey: input.trim() })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('✅ API key diperbarui');
+            loadAdminConfig();
+        } else {
+            alert('❌ ' + data.message);
+        }
+    } catch (err) { alert(err.message); }
+}
+
+// ============================================================
+// EDIT MODEL PROVIDER
+// ============================================================
+async function editProviderModels(index, currentModels) {
+    const input = prompt('Edit model provider (pisah dengan koma):', currentModels);
+    if (input === null) return;
+    const models = input.split(',').map(s => s.trim()).filter(Boolean);
+    if (models.length === 0) return alert('Minimal 1 model');
+
+    try {
+        const res = await adminFetch('/api/admin/providers/update-models', {
+            method: 'POST', body: JSON.stringify({ index, models })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('✅ Model diperbarui');
+            loadAdminConfig();
+        } else alert('❌ ' + data.message);
+    } catch (err) { alert(err.message); }
+}
+
+// ============================================================
+// REMOVE / TOGGLE / TEST PROVIDER
+// ============================================================
 async function removeProvider(index) {
     if (!confirm('Hapus provider ini?')) return;
     try {
@@ -968,24 +1201,6 @@ async function toggleProvider(index) {
     } catch (err) { alert(err.message); }
 }
 
-async function editProviderModels(index, currentModels) {
-    const input = prompt('Edit model provider (pisah dengan koma):', currentModels);
-    if (input === null) return;
-    const models = input.split(',').map(s => s.trim()).filter(Boolean);
-    if (models.length === 0) return alert('Minimal 1 model');
-
-    try {
-        const res = await adminFetch('/api/admin/providers/update-models', {
-            method: 'POST', body: JSON.stringify({ index, models })
-        });
-        const data = await res.json();
-        if (data.success) {
-            alert('✅ Model diperbarui');
-            loadAdminConfig();
-        } else alert('❌ ' + data.message);
-    } catch (err) { alert(err.message); }
-}
-
 async function testProvider(index) {
     try {
         const res = await adminFetch('/api/admin/providers/test', {
@@ -1001,7 +1216,7 @@ async function testProvider(index) {
 // ============================================================
 function filterUnanswered(filter) {
     currentUnansweredFilter = filter;
-    document.querySelectorAll('.filter-tab').forEach(tab => {
+    document.querySelectorAll('#page-unanswered .filter-tab').forEach(tab => {
         tab.classList.toggle('active', tab.dataset.filter === filter);
     });
     loadUnanswered();
@@ -1039,6 +1254,8 @@ async function loadUnanswered() {
                 ? `<span class="badge badge-warning">Ditanya ${u.count}x</span>`
                 : '';
 
+            const safeQuestion = u.question.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/'/g, "\\'");
+
             html += `
                 <div class="unanswered-item ${isResolved ? 'unanswered-resolved' : ''}">
                     <div class="unanswered-head">
@@ -1056,17 +1273,13 @@ async function loadUnanswered() {
                     </div>
                     <div class="unanswered-actions">
                         ${!isResolved ? `
-                            <button class="btn-primary-lg btn-sm" onclick="openAnswerModal('${u.id}', \`${u.question.replace(/`/g, '\\`')}\`)">
+                            <button class="btn-primary-lg btn-sm" onclick="openAnswerModal('${u.id}', '${safeQuestion}', 'unanswered')">
                                 <i class="fas fa-plus-circle"></i> Tambah Jawaban
                             </button>
                             <button class="btn-secondary btn-sm" onclick="markUnansweredResolved('${u.id}')">
                                 <i class="fas fa-check"></i> Tandai Sudah
                             </button>
-                        ` : `
-                            <button class="btn-secondary btn-sm" onclick="markUnansweredUnresolved('${u.id}')">
-                                <i class="fas fa-undo"></i> Tandai Belum
-                            </button>
-                        `}
+                        ` : ''}
                         <button class="btn-danger-outline btn-sm" onclick="deleteUnanswered('${u.id}')">
                             <i class="fas fa-trash"></i> Hapus
                         </button>
@@ -1080,46 +1293,6 @@ async function loadUnanswered() {
     }
 }
 
-function openAnswerModal(id, question) {
-    document.getElementById('modal-id').value = id;
-    document.getElementById('modal-question').value = question;
-    document.getElementById('modal-answer').value = '';
-    document.getElementById('modal-category').value = '';
-    document.getElementById('answerModal').classList.add('show');
-    setTimeout(() => document.getElementById('modal-answer').focus(), 100);
-}
-
-function closeAnswerModal(event) {
-    if (event && event.target !== event.currentTarget) return;
-    document.getElementById('answerModal').classList.remove('show');
-}
-
-async function submitAnswerToKnowledge() {
-    const id = document.getElementById('modal-id').value;
-    const question = document.getElementById('modal-question').value;
-    const answer = document.getElementById('modal-answer').value.trim();
-    const category = document.getElementById('modal-category').value.trim();
-
-    if (!answer) return alert('Jawaban tidak boleh kosong');
-    if (answer.length < 20) return alert('Jawaban minimal 20 karakter');
-
-    try {
-        const res = await adminFetch('/api/admin/unanswered/add-to-knowledge', {
-            method: 'POST',
-            body: JSON.stringify({ id, question, answer, category })
-        });
-        const data = await res.json();
-        if (data.success) {
-            alert('✅ ' + data.message);
-            closeAnswerModal();
-            loadUnanswered();
-            loadAdminConfig();
-        } else {
-            alert('❌ ' + data.message);
-        }
-    } catch (err) { alert(err.message); }
-}
-
 async function markUnansweredResolved(id) {
     try {
         const res = await adminFetch('/api/admin/unanswered/resolve', {
@@ -1128,11 +1301,6 @@ async function markUnansweredResolved(id) {
         const data = await res.json();
         if (data.success) { loadUnanswered(); loadAdminConfig(); }
     } catch (err) { alert(err.message); }
-}
-
-async function markUnansweredUnresolved(id) {
-    // Untuk unresolved, kita butuh endpoint tambahan — pakai delete + tidak ada, jadi skip
-    alert('Fitur ini belum tersedia. Hapus lalu tambah manual jika perlu.');
 }
 
 async function deleteUnanswered(id) {
@@ -1158,10 +1326,350 @@ async function clearResolvedUnanswered() {
 }
 
 // ============================================================
+// LEARNING QUEUE
+// ============================================================
+function filterLearning(filter) {
+    currentLearningFilter = filter;
+    document.querySelectorAll('#page-learning .filter-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.filter === filter);
+    });
+    loadLearningQueue();
+}
+
+async function loadLearningQueue() {
+    const el = document.getElementById('learningList');
+    if (!el) return;
+    el.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i></div>';
+
+    try {
+        const res = await adminFetch(`/api/admin/learning/queue?filter=${currentLearningFilter}`);
+        const data = await res.json();
+
+        const stats = data.stats || {};
+
+        const setText = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+        setText('learningTotal', stats.total || 0);
+        setText('learningPending', stats.pending || 0);
+        setText('learningResolved', stats.resolved || 0);
+        setText('learningUrgent', stats.urgent || 0);
+
+        const setCount = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+        setCount('learningFilterPendingCount', stats.pending || 0);
+        setCount('learningFilterUrgentCount', stats.urgent || 0);
+        setCount('learningFilterHighCount', (stats.urgent || 0) + (stats.high || 0));
+        setCount('learningFilterAllCount', stats.total || 0);
+
+        const badge = document.getElementById('badgeLearning');
+        if (badge) {
+            badge.textContent = stats.pending || 0;
+            badge.style.display = (stats.pending || 0) > 0 ? 'inline-flex' : 'none';
+        }
+
+        if (!data.items || data.items.length === 0) {
+            el.innerHTML = '<div class="empty-state"><i class="fas fa-check-circle" style="font-size:32px; color:var(--success); margin-bottom:8px;"></i><br>Tidak ada antrian belajar. AI Anda sudah pintar! 🎉</div>';
+            return;
+        }
+
+        let html = '';
+        data.items.forEach(item => {
+            const date = new Date(item.lastAsked).toLocaleString('id-ID');
+            const priorityClass = `priority-${item.priority}`;
+            const priorityLabel = {
+                urgent: '🚨 URGENT',
+                high: '⚠️ TINGGI',
+                medium: '📌 SEDANG',
+                normal: 'ℹ️ NORMAL'
+            }[item.priority] || 'NORMAL';
+
+            const variants = (item.variants || []).slice(0, 3).map(v =>
+                `<div class="variant-item"><i class="fas fa-quote-right"></i> ${v}</div>`
+            ).join('');
+
+            const safeQuestion = (item.original || item.question)
+                .replace(/\\/g, '\\\\')
+                .replace(/`/g, '\\`')
+                .replace(/'/g, "\\'");
+
+            html += `
+                <div class="learning-item ${priorityClass} ${item.resolved ? 'learning-resolved' : ''}">
+                    <div class="learning-head">
+                        <div class="learning-priority">${priorityLabel}</div>
+                        <div class="learning-count">
+                            <i class="fas fa-fire"></i> ${item.count}x ditanya
+                        </div>
+                    </div>
+                    <div class="learning-question">
+                        <i class="fas fa-question-circle"></i> ${item.question}
+                    </div>
+                    ${variants ? `
+                        <div class="learning-variants">
+                            <div class="variant-label">Variasi pertanyaan:</div>
+                            ${variants}
+                        </div>
+                    ` : ''}
+                    <div class="learning-meta">
+                        <i class="fas fa-clock"></i> Pertama: ${new Date(item.firstAsked).toLocaleDateString('id-ID')}
+                        • Terakhir: ${date}
+                    </div>
+                    <div class="unanswered-actions">
+                        ${!item.resolved ? `
+                            <button class="btn-primary-lg btn-sm" onclick="openAnswerModal('${item.id}', '${safeQuestion}', 'learning')">
+                                <i class="fas fa-plus-circle"></i> Tambah ke Pengetahuan
+                            </button>
+                            <button class="btn-secondary btn-sm" onclick="resolveLearning('${item.id}')">
+                                <i class="fas fa-check"></i> Tandai Selesai
+                            </button>
+                        ` : `
+                            <span class="badge badge-success">✓ Sudah ditangani</span>
+                        `}
+                        <button class="btn-danger-outline btn-sm" onclick="deleteLearning('${item.id}')">
+                            <i class="fas fa-trash"></i> Hapus
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+        el.innerHTML = html;
+    } catch (err) {
+        el.innerHTML = `<div class="empty-state text-danger">Gagal load: ${err.message}</div>`;
+    }
+}
+
+async function resolveLearning(id) {
+    try {
+        const res = await adminFetch('/api/admin/learning/resolve', {
+            method: 'POST', body: JSON.stringify({ id })
+        });
+        const data = await res.json();
+        if (data.success) { loadLearningQueue(); loadAdminConfig(); }
+    } catch (err) { alert(err.message); }
+}
+
+async function deleteLearning(id) {
+    if (!confirm('Hapus pertanyaan ini dari antrian belajar?')) return;
+    try {
+        const res = await adminFetch('/api/admin/learning/delete', {
+            method: 'POST', body: JSON.stringify({ id })
+        });
+        const data = await res.json();
+        if (data.success) { loadLearningQueue(); loadAdminConfig(); }
+    } catch (err) { alert(err.message); }
+}
+
+async function clearResolvedLearning() {
+    if (!confirm('Hapus semua pertanyaan yang sudah diselesaikan?')) return;
+    try {
+        const res = await adminFetch('/api/admin/learning/clear-resolved', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) { loadLearningQueue(); loadAdminConfig(); }
+    } catch (err) { alert(err.message); }
+}
+
+async function clearAllLearning() {
+    if (!confirm('⚠️ HAPUS SEMUA antrian belajar?')) return;
+    if (!confirm('Yakin? Tindakan ini tidak bisa dibatalkan.')) return;
+    try {
+        const res = await adminFetch('/api/admin/learning/clear-all', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) { loadLearningQueue(); loadAdminConfig(); }
+    } catch (err) { alert(err.message); }
+}
+
+// ============================================================
+// FEEDBACK
+// ============================================================
+function filterFeedback(filter) {
+    currentFeedbackFilter = filter;
+    document.querySelectorAll('#page-feedback .filter-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.filter === filter);
+    });
+    loadFeedback();
+}
+
+async function loadFeedback() {
+    try {
+        const statsRes = await adminFetch('/api/admin/feedback/stats');
+        const stats = await statsRes.json();
+
+        const setText = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+        setText('fbTotal', stats.feedback?.total || 0);
+        setText('fbGood', stats.feedback?.good || 0);
+        setText('fbBad', stats.feedback?.bad || 0);
+        setText('fbSatisfaction', (stats.feedback?.satisfactionRate || 0) + '%');
+
+        setText('anTotalChats', stats.analytics?.totalChats || 0);
+        setText('anTotalAnswers', stats.analytics?.totalAnswers || 0);
+        setText('anRefusals', stats.analytics?.totalRefusals || 0);
+        setText('anAccuracy', (stats.analytics?.accuracyRate || 0) + '%');
+        setText('anMemoryHits', stats.analytics?.totalMemoryHits || 0);
+        setText('anRagHits', stats.analytics?.totalRagHits || 0);
+        setText('anOutOfScope', stats.analytics?.totalOutOfScope || 0);
+
+        renderFeedbackChart(stats.dailyStats);
+    } catch (err) {
+        console.error('Gagal load feedback stats:', err);
+    }
+
+    const el = document.getElementById('feedbackList');
+    if (!el) return;
+    el.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i></div>';
+
+    try {
+        let endpoint = '/api/admin/feedback/list';
+        if (currentFeedbackFilter === 'good') endpoint = '/api/admin/feedback/good';
+        if (currentFeedbackFilter === 'bad') endpoint = '/api/admin/feedback/bad';
+
+        const res = await adminFetch(endpoint);
+        const data = await res.json();
+
+        if (!data.items || data.items.length === 0) {
+            el.innerHTML = '<div class="empty-state">Belum ada feedback.</div>';
+            return;
+        }
+
+        let html = '';
+        data.items.forEach(f => {
+            const date = new Date(f.timestamp).toLocaleString('id-ID');
+            const icon = f.rating === 'good' ? 'thumbs-up' : 'thumbs-down';
+            const badgeClass = f.rating === 'good' ? 'badge-success' : 'badge-danger';
+
+            html += `
+                <div class="feedback-item feedback-${f.rating}">
+                    <div class="feedback-head">
+                        <div class="feedback-icon">
+                            <i class="fas fa-${icon}"></i>
+                        </div>
+                        <div class="feedback-question">${f.question}</div>
+                        <span class="badge ${badgeClass}">${f.rating === 'good' ? '👍 Bagus' : '👎 Kurang'}</span>
+                    </div>
+                    <div class="feedback-answer">
+                        <div class="feedback-label">Jawaban AI:</div>
+                        <div class="feedback-answer-text">${f.answer}</div>
+                    </div>
+                    <div class="feedback-meta">
+                        <i class="fas fa-clock"></i> ${date}
+                        ${f.provider ? ` • <i class="fas fa-cloud"></i> ${f.provider}` : ''}
+                        ${f.source ? ` • <i class="fas fa-tag"></i> ${f.source}` : ''}
+                    </div>
+                </div>
+            `;
+        });
+        el.innerHTML = html;
+    } catch (err) {
+        el.innerHTML = `<div class="empty-state text-danger">Gagal load: ${err.message}</div>`;
+    }
+}
+
+function renderFeedbackChart(dailyStats) {
+    const el = document.getElementById('feedbackChart');
+    if (!el || !dailyStats) return;
+
+    const days = Object.keys(dailyStats).sort().slice(-7);
+    if (days.length === 0) {
+        el.innerHTML = '<div class="empty-state">Belum ada data</div>';
+        return;
+    }
+
+    const max = Math.max(...days.map(d => dailyStats[d].chats || 0), 1);
+    let html = '<div class="chart-bars">';
+    days.forEach(day => {
+        const stats = dailyStats[day];
+        const total = stats.chats || 0;
+        const good = stats.good || 0;
+        const bad = stats.bad || 0;
+        const height = (total / max) * 100;
+
+        html += `
+            <div class="chart-bar-wrap" title="${day}: ${total} chat">
+                <div class="chart-bar-value">${total}</div>
+                <div class="chart-bar chart-bar-multi" style="height: ${Math.max(height, 5)}%">
+                    <div class="bar-good" style="height: ${total > 0 ? (good/total)*100 : 0}%"></div>
+                    <div class="bar-bad" style="height: ${total > 0 ? (bad/total)*100 : 0}%"></div>
+                </div>
+                <div class="chart-bar-label">${day.slice(5)}</div>
+            </div>
+        `;
+    });
+    html += '</div>';
+    html += '<div class="chart-legend">' +
+            '<span class="legend-item"><span class="legend-dot legend-good"></span> Bagus</span>' +
+            '<span class="legend-item"><span class="legend-dot legend-bad"></span> Kurang</span>' +
+            '</div>';
+    el.innerHTML = html;
+}
+
+async function clearFeedback() {
+    if (!confirm('Hapus semua data feedback?')) return;
+    try {
+        await adminFetch('/api/admin/feedback/clear', { method: 'POST', body: JSON.stringify({}) });
+        loadFeedback();
+    } catch (err) { alert(err.message); }
+}
+
+async function clearAnalytics() {
+    if (!confirm('Reset semua data analytics?')) return;
+    try {
+        await adminFetch('/api/admin/feedback/clear', { method: 'POST', body: JSON.stringify({ analytics: true }) });
+        loadFeedback();
+    } catch (err) { alert(err.message); }
+}
+
+// ============================================================
+// MODAL ANSWER
+// ============================================================
+function openAnswerModal(id, question, source) {
+    document.getElementById('modal-id').value = id;
+    document.getElementById('modal-question').value = question;
+    document.getElementById('modal-answer').value = '';
+    document.getElementById('modal-category').value = '';
+    document.getElementById('modal-source').value = source;
+    document.getElementById('answerModal').classList.add('show');
+    setTimeout(() => document.getElementById('modal-answer').focus(), 100);
+}
+
+function closeAnswerModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    document.getElementById('answerModal').classList.remove('show');
+}
+
+async function submitAnswerToKnowledge() {
+    const id = document.getElementById('modal-id').value;
+    const question = document.getElementById('modal-question').value;
+    const answer = document.getElementById('modal-answer').value.trim();
+    const category = document.getElementById('modal-category').value.trim();
+    const source = document.getElementById('modal-source').value;
+
+    if (!answer) return alert('Jawaban tidak boleh kosong');
+    if (answer.length < 20) return alert('Jawaban minimal 20 karakter');
+
+    const endpoint = source === 'learning'
+        ? '/api/admin/learning/add-to-knowledge'
+        : '/api/admin/unanswered/add-to-knowledge';
+
+    try {
+        const res = await adminFetch(endpoint, {
+            method: 'POST',
+            body: JSON.stringify({ id, question, answer, category })
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert('✅ ' + data.message);
+            closeAnswerModal();
+            if (source === 'learning') loadLearningQueue();
+            else loadUnanswered();
+            loadAdminConfig();
+        } else {
+            alert('❌ ' + data.message);
+        }
+    } catch (err) { alert(err.message); }
+}
+
+// ============================================================
 // LOGO
 // ============================================================
 function updateLogoPreview(url) {
     const box = document.getElementById('logoPreviewBox');
+    if (!box) return;
     if (url) {
         box.innerHTML = `<img src="${url}" alt="Logo">`;
     } else {
@@ -1266,6 +1774,7 @@ async function savePrompt() {
 // ============================================================
 function renderKnowledgeFiles(files, chunks) {
     const el = document.getElementById('knowledgeFilesList');
+    if (!el) return;
     if (files.length === 0) {
         el.innerHTML = '<div class="empty-state">Belum ada file pengetahuan</div>';
         return;
@@ -1403,8 +1912,8 @@ async function reloadMemory() {
 async function saveMemorySettings() {
     const updates = {
         memoryEnabled: document.getElementById('memoryEnabled').checked,
-        memoryMinScore: parseInt(document.getElementById('memoryMinScore').value) || 40,
-        memorySaveThreshold: parseInt(document.getElementById('memorySaveThreshold').value) || 30
+        memoryMinScore: parseInt(document.getElementById('memoryMinScore').value) || 60,
+        memorySaveThreshold: parseInt(document.getElementById('memorySaveThreshold').value) || 40
     };
     try {
         const res = await adminFetch('/api/admin/config', {
@@ -1603,9 +2112,12 @@ async function changePassword() {
     }
 }
 
+// ============================================================
+// KEYBOARD SHORTCUT
+// ============================================================
 document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') {
-        if (document.getElementById('loginPage').style.display === 'flex') hideLogin();
+        if (document.getElementById('loginPage')?.style.display === 'flex') hideLogin();
         document.getElementById('answerModal')?.classList.remove('show');
     }
 });

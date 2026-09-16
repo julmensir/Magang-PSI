@@ -16,6 +16,21 @@ import { createRequire } from 'module';
 
 import { PROVIDERS, callWithFallback, callGemini, callOpenAICompatible } from './lib/providers.js';
 import { tokenize, memorySearch, memoryAdd, validateMemoryRelevance, makeBigrams, stemID } from './lib/memory.js';
+import { classifyQuestion, generateRedirectMessage } from './lib/classifier.js';
+import {
+    feedbackInit, addFeedback, trackEvent, getStats,
+    getFeedbackList, getBadExamples, getGoodExamples,
+    clearFeedback, clearAnalytics
+} from './lib/feedback.js';
+import {
+    learningInit, recordUnansweredQuestion, getLearningQueue,
+    getQueueStats, resolveQuestion, deleteQuestion,
+    clearResolved as clearLearningResolved, clearAll as clearLearningAll
+} from './lib/learning.js';
+import {
+    summarizerInit, generateKnowledgeSummary, generateDailyInsight,
+    getSummaries, getLatestSummary
+} from './lib/summarizer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -100,9 +115,7 @@ function encryptBuffer(buffer) {
 // ============================================================
 function cleanAIText(text) {
     if (!text) return '';
-
     let clean = text;
-
     clean = clean.replace(/\*\*(.+?)\*\*/g, '$1');
     clean = clean.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '$1');
     clean = clean.replace(/^#{1,6}\s+/gm, '');
@@ -111,7 +124,6 @@ function cleanAIText(text) {
     clean = clean.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
     clean = clean.replace(/\n{3,}/g, '\n\n');
     clean = clean.replace(/[ \t]+$/gm, '');
-
     return clean.trim();
 }
 
@@ -121,9 +133,8 @@ function cleanAIText(text) {
 const PATHS = {
     dataDir: path.join(__dirname, 'data'),
     config: path.join(__dirname, 'data', 'config.json'),
-    keys: path.join(__dirname, 'data', 'keys.json.enc'),
     providers: path.join(__dirname, 'data', 'providers.json.enc'),
-    keysLegacy: path.join(__dirname, 'keys.json'),
+    keys: path.join(__dirname, 'data', 'keys.json.enc'),
     unanswered: path.join(__dirname, 'data', 'unanswered.json'),
     knowledge: path.join(__dirname, 'knowledge'),
     memoryFile: path.join(__dirname, 'memory', 'memory.md'),
@@ -138,6 +149,13 @@ Object.values(PATHS).forEach(p => {
     const dir = p.includes('.') ? path.dirname(p) : p;
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
+
+// ============================================================
+// INIT MODULES
+// ============================================================
+feedbackInit();
+learningInit();
+summarizerInit();
 
 // ============================================================
 // NOTIFIKASI
@@ -175,7 +193,7 @@ function notifAddThrottled(key, type, title, message, level = 'warning', cooldow
 notifInit();
 
 // ============================================================
-// UNANSWERED QUESTIONS (Pertanyaan yang tidak bisa dijawab AI)
+// UNANSWERED QUESTIONS
 // ============================================================
 let unansweredQuestions = [];
 
@@ -191,8 +209,6 @@ function unansweredSave() {
 
 function unansweredAdd(question, sessionId) {
     const qNorm = question.toLowerCase().trim();
-
-    // Cek duplikat dalam 24 jam terakhir
     const recent = unansweredQuestions.find(u =>
         u.question.toLowerCase().trim() === qNorm &&
         (Date.now() - new Date(u.lastAsked).getTime()) < 24 * 60 * 60 * 1000
@@ -216,7 +232,6 @@ function unansweredAdd(question, sessionId) {
     };
     unansweredQuestions.push(item);
     unansweredSave();
-    console.log(`[UNANSWERED] "${question.slice(0, 60)}"`);
     return item;
 }
 
@@ -283,7 +298,7 @@ function sessionGetOrCreate(sessionId) {
 function sessionAddMessage(sessionId, role, text) {
     const session = sessions[sessionId];
     if (!session) return;
-    session.messages.push({ role, text: text.slice(0, 2000), ts: Date.now() });
+    session.messages.push({ role, text: text.slice(0, 3000), ts: Date.now() });
     if (session.messages.length > MAX_SESSION_MESSAGES) {
         session.messages = session.messages.slice(-MAX_SESSION_MESSAGES);
     }
@@ -322,34 +337,12 @@ process.on('SIGINT', () => {
 });
 
 // ============================================================
-// MULTI-PROVIDER API KEY MANAGER
+// PROVIDERS CONFIG
 // ============================================================
 let PROVIDERS_CONFIG = loadProviders();
 
 function loadProviders() {
-    if (!fs.existsSync(PATHS.providers)) {
-        if (fs.existsSync(PATHS.keys)) {
-            try {
-                const raw = fs.readFileSync(PATHS.keys, 'utf-8').trim();
-                const keys = isEncryptedFormat(raw) ? JSON.parse(decryptData(raw)) : JSON.parse(raw);
-                const migrated = [];
-                for (const k of keys) {
-                    migrated.push({
-                        name: 'gemini',
-                        apiKey: k,
-                        models: PROVIDERS.gemini.models,
-                        enabled: true
-                    });
-                }
-                fs.writeFileSync(PATHS.providers, encryptData(JSON.stringify(migrated)), 'utf-8');
-                console.log(`[PROVIDERS] Migrasi ${keys.length} Gemini key ke format baru.`);
-                return migrated;
-            } catch (e) {
-                console.error('[PROVIDERS] Gagal migrasi:', e.message);
-            }
-        }
-        return [];
-    }
+    if (!fs.existsSync(PATHS.providers)) return [];
     try {
         const raw = fs.readFileSync(PATHS.providers, 'utf-8').trim();
         if (!isEncryptedFormat(raw)) return [];
@@ -400,10 +393,19 @@ function memoryLoad() {
             const lines = block.split('\n');
             const headerMatch = lines[0].match(/\[(.+?)\]\s*(.+)/);
             if (!headerMatch) continue;
+
             const getField = (name) => {
-                const line = lines.find(l => l.startsWith(`**${name}:**`));
-                return line ? line.replace(`**${name}:**`, '').trim() : '';
+                const idx = lines.findIndex(l => l.startsWith(`**${name}:**`));
+                if (idx === -1) return '';
+                let value = lines[idx].replace(`**${name}:**`, '').trim();
+                for (let i = idx + 1; i < lines.length; i++) {
+                    if (lines[i].startsWith('**') || lines[i].startsWith('## ')) break;
+                    if (lines[i].trim() === '') break;
+                    value += '\n' + lines[i];
+                }
+                return value.trim();
             };
+
             memoryItems.push({
                 timestamp: headerMatch[1],
                 title: headerMatch[2].trim(),
@@ -600,22 +602,28 @@ const DEFAULT_CONFIG = {
     welcomeMessage: 'Halo! Saya SIVTY AI, asisten virtual Kemantren Tegalrejo Yogyakarta.\nTanya apa saja tentang layanan administrasi, persyaratan, jadwal, dan info lainnya. Saya siap bantu 24 jam!',
     systemInstruction: `Kamu adalah SIVT AI, asisten virtual resmi Kemantren Tegalrejo, Yogyakarta.
 
-ATURAN WAJIB:
-1. Jawab HANYA berdasarkan "KONTEKS" yang diberikan.
-2. Kalau jawaban TIDAK ADA di konteks, jawab: "Wah, info itu belum ada di buku saya nih. Coba hubungi petugas langsung ya di (0274) 123456."
-3. DILARANG mengarang jawaban, nomor telepon, alamat, atau persyaratan.
-4. DILARANG pakai tanda bintang ** atau * atau ## atau backtick.
-5. Untuk list, gunakan simbol bullet "•" atau angka "1. 2. 3."
-6. Pisahkan bagian dengan baris kosong.
-7. Jawab singkat, padat, 2-3 paragraf pendek.
+ATURAN WAJIB - JANGAN DILANGGAR:
+1. Kamu HANYA boleh menjawab berdasarkan "KONTEKS" yang diberikan.
+2. Jika jawaban TIDAK ADA di konteks, WAJIB jawab persis: "Wah, info itu belum ada di buku catatan SIVT nih. Coba hubungi petugas langsung ya via WA 0812-3456-7890 atau telepon (0274) 123456."
+3. DILARANG MENGARANG jawaban, syarat, biaya, atau info apapun.
+4. DILARANG menjawab pertanyaan di luar topik Kemantren Tegalrejo.
+5. DILARANG pakai tanda bintang ** atau * atau ## atau backtick.
+6. Untuk list, gunakan bullet "•" atau angka "1. 2. 3."
+7. Jawab SINGKAT, PADAT, langsung ke inti.
+8. JAWAB LENGKAP sesuai konteks. Jangan memotong jawaban.
 
-Info umum: Alamat Jl. Tegalrejo No.1, Yogyakarta. Jam: Senin-Jumat 08.00-15.00, Sabtu 08.00-12.00. Telepon: (0274) 123456.`,
+Info umum:
+- Alamat: Jl. Tegalrejo No.1, Yogyakarta
+- Jam: Senin-Jumat 08.00-15.00, Sabtu 08.00-12.00
+- Telepon: (0274) 123456
+- Semua layanan GRATIS`,
     memoryEnabled: true,
-    memoryMinScore: 40,
-    memorySaveThreshold: 30,
+    memoryMinScore: 60,
+    memorySaveThreshold: 40,
     conversationHistoryEnabled: true,
     conversationHistorySize: 10,
-    rateLimitPerSession: 20
+    rateLimitPerSession: 20,
+    strictMode: true
 };
 
 function loadConfig() {
@@ -663,7 +671,10 @@ async function runBackup() {
             { src: PATHS.config, name: 'config.json' },
             { src: PATHS.providers, name: 'providers.json.enc' },
             { src: PATHS.memoryFile, name: 'memory.md' },
-            { src: PATHS.unanswered, name: 'unanswered.json' }
+            { src: PATHS.unanswered, name: 'unanswered.json' },
+            { src: path.join(PATHS.dataDir, 'feedback.json'), name: 'feedback.json' },
+            { src: path.join(PATHS.dataDir, 'learning-queue.json'), name: 'learning-queue.json' },
+            { src: path.join(PATHS.dataDir, 'analytics.json'), name: 'analytics.json' }
         ];
         for (const f of files) {
             if (fs.existsSync(f.src)) fs.copyFileSync(f.src, path.join(tmpDir, f.name));
@@ -714,6 +725,19 @@ cron.schedule('0 2 * * *', () => {
     runBackup();
 });
 
+cron.schedule('0 23 * * *', () => {
+    console.log('[CRON] Generate daily insight...');
+    try {
+        generateDailyInsight(
+            getFeedbackList(500),
+            getLearningQueue('all'),
+            unansweredQuestions
+        );
+    } catch (e) {
+        console.error('[CRON] Gagal generate insight:', e.message);
+    }
+});
+
 // ============================================================
 // MIDDLEWARE
 // ============================================================
@@ -733,7 +757,7 @@ app.use(express.json({ limit: '5mb' }));
 app.use(cookieParser());
 
 app.use('/api/', rateLimit({
-    windowMs: 15 * 60 * 1000, max: 300,
+    windowMs: 15 * 60 * 1000, max: 500,
     standardHeaders: true, legacyHeaders: false
 }));
 
@@ -817,18 +841,19 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+
 // ============================================================
 // DASHBOARD STATS
 // ============================================================
 app.get('/api/admin/dashboard/stats', authAdmin, (req, res) => {
     const activeProviders = PROVIDERS_CONFIG.filter(p => p.enabled !== false).length;
-    const totalProviders = PROVIDERS_CONFIG.length;
     const totalSessions = Object.keys(sessions).length;
     const totalMessages = Object.values(sessions).reduce((sum, s) => sum + s.messages.length, 0);
     const unreadNotif = notifications.filter(n => !n.read).length;
     const pendingUnanswered = unansweredQuestions.filter(u => !u.resolved).length;
+    const feedbackStats = getStats();
+    const queueStats = getQueueStats();
 
-    // Aktivitas 7 hari terakhir
     const now = Date.now();
     const dailyStats = [];
     for (let i = 6; i >= 0; i--) {
@@ -849,11 +874,11 @@ app.get('/api/admin/dashboard/stats', authAdmin, (req, res) => {
         aiName: CONFIG.aiName,
         uptime: process.uptime(),
         providers: {
-            total: totalProviders,
+            total: PROVIDERS_CONFIG.length,
             active: activeProviders,
-            inactive: totalProviders - activeProviders,
+            inactive: PROVIDERS_CONFIG.length - activeProviders,
             list: PROVIDERS_CONFIG.map(p => ({
-                name: PROVIDERS[p.name]?.name || p.name,
+                name: p.displayName || PROVIDERS[p.name]?.name || p.name,
                 enabled: p.enabled !== false,
                 models: p.models.length
             }))
@@ -882,12 +907,15 @@ app.get('/api/admin/dashboard/stats', authAdmin, (req, res) => {
             total: unansweredQuestions.length,
             pending: pendingUnanswered,
             resolved: unansweredQuestions.length - pendingUnanswered
-        }
+        },
+        feedback: feedbackStats.feedback,
+        analytics: feedbackStats.analytics,
+        learning: queueStats
     });
 });
 
 // ============================================================
-// LOGIN
+// LOGIN / LOGOUT
 // ============================================================
 app.post('/api/admin/login', (req, res) => {
     const { username, password } = req.body;
@@ -923,10 +951,12 @@ app.get('/api/admin/config', authAdmin, (req, res) => {
         providers: PROVIDERS_CONFIG.map((p, i) => ({
             index: i,
             name: p.name,
-            displayName: PROVIDERS[p.name]?.name || p.name,
+            displayName: p.displayName || PROVIDERS[p.name]?.name || p.name,
             models: p.models,
             masked: p.apiKey ? p.apiKey.slice(0, 8) + '...' + p.apiKey.slice(-6) : '',
-            enabled: p.enabled !== false
+            enabled: p.enabled !== false,
+            isCustom: !!p.customEndpoint,
+            customEndpoint: p.customEndpoint || null
         })),
         knowledgeFiles: fs.existsSync(PATHS.knowledge)
             ? fs.readdirSync(PATHS.knowledge).filter(f => /\.(md|txt)$/i.test(f)).map(f => {
@@ -938,7 +968,8 @@ app.get('/api/admin/config', authAdmin, (req, res) => {
         memoryCount: memoryItems.length,
         sessionCount: Object.keys(sessions).length,
         unreadNotifications: notifications.filter(n => !n.read).length,
-        pendingUnanswered: unansweredQuestions.filter(u => !u.resolved).length
+        pendingUnanswered: unansweredQuestions.filter(u => !u.resolved).length,
+        pendingLearning: getQueueStats().pending
     });
 });
 
@@ -948,7 +979,7 @@ app.post('/api/admin/config', authAdmin, (req, res) => {
                         'systemInstruction','quickButtons','memoryEnabled',
                         'memoryMinScore','memorySaveThreshold',
                         'conversationHistoryEnabled','conversationHistorySize',
-                        'rateLimitPerSession','contactInfo'];
+                        'rateLimitPerSession','contactInfo','strictMode'];
         for (const k of allowed) {
             if (req.body[k] !== undefined) {
                 if (k === 'theme' && typeof req.body[k] === 'object') {
@@ -966,29 +997,43 @@ app.post('/api/admin/config', authAdmin, (req, res) => {
 });
 
 // ============================================================
-// PROVIDERS — API KEYS MULTI
+// PROVIDERS — CRUD + CUSTOM
 // ============================================================
 app.post('/api/admin/providers/add', authAdmin, (req, res) => {
     try {
-        const { name, apiKey, models } = req.body;
+        const { name, apiKey, models, customEndpoint, displayName } = req.body;
         if (!name || !apiKey) {
             return res.json({ success: false, message: 'Nama provider & API key wajib diisi' });
         }
-        if (!PROVIDERS[name]) {
-            return res.json({ success: false, message: `Provider "${name}" tidak dikenal.` });
+
+        const isBuiltIn = !!PROVIDERS[name];
+
+        if (!isBuiltIn && !customEndpoint) {
+            return res.json({
+                success: false,
+                message: `Provider "${name}" tidak dikenal. Pilih provider terdaftar atau isi Custom Endpoint.`
+            });
         }
 
-        PROVIDERS_CONFIG.push({
+        const newProvider = {
             name,
             apiKey: apiKey.trim(),
-            models: Array.isArray(models) && models.length > 0 ? models : PROVIDERS[name].models,
+            models: Array.isArray(models) && models.length > 0
+                ? models
+                : (PROVIDERS[name]?.models || []),
             enabled: true,
             addedAt: new Date().toISOString()
-        });
-        saveProviders();
-        notifAdd('info', 'Provider Ditambahkan', `${PROVIDERS[name].name} berhasil ditambahkan`, 'info');
+        };
 
-        console.log(`[PROVIDERS] Tambah ${name}, total ${PROVIDERS_CONFIG.length}`);
+        if (!isBuiltIn) {
+            newProvider.customEndpoint = customEndpoint;
+            newProvider.displayName = displayName || name;
+        }
+
+        PROVIDERS_CONFIG.push(newProvider);
+        saveProviders();
+        notifAdd('info', 'Provider Ditambahkan',
+            `${newProvider.displayName || PROVIDERS[name]?.name || name} berhasil ditambahkan`, 'info');
         res.json({ success: true, total: PROVIDERS_CONFIG.length });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
@@ -1000,10 +1045,8 @@ app.post('/api/admin/providers/remove', authAdmin, (req, res) => {
     if (index < 0 || index >= PROVIDERS_CONFIG.length) {
         return res.json({ success: false, message: 'Index tidak valid' });
     }
-    const removed = PROVIDERS_CONFIG[index];
     PROVIDERS_CONFIG.splice(index, 1);
     saveProviders();
-    notifAdd('warning', 'Provider Dihapus', `${PROVIDERS[removed.name]?.name || removed.name} telah dihapus`, 'warning');
     res.json({ success: true, total: PROVIDERS_CONFIG.length });
 });
 
@@ -1016,8 +1059,8 @@ app.post('/api/admin/providers/toggle', authAdmin, (req, res) => {
     saveProviders();
     const p = PROVIDERS_CONFIG[index];
     const state = p.enabled ? 'AKTIF' : 'NONAKTIF';
-    notifAdd('info', `Provider ${state}`, `${PROVIDERS[p.name]?.name || p.name} → ${state}`, 'info');
-    console.log(`[PROVIDERS] Toggle #${index} (${p.name}) → ${state}`);
+    notifAdd('info', `Provider ${state}`,
+        `${p.displayName || PROVIDERS[p.name]?.name || p.name} → ${state}`, 'info');
     res.json({ success: true, enabled: PROVIDERS_CONFIG[index].enabled });
 });
 
@@ -1032,8 +1075,26 @@ app.post('/api/admin/providers/update-models', authAdmin, (req, res) => {
         }
         PROVIDERS_CONFIG[index].models = models.map(m => String(m).trim()).filter(Boolean);
         saveProviders();
-        console.log(`[PROVIDERS] Update models #${index}`);
         res.json({ success: true, models: PROVIDERS_CONFIG[index].models });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.post('/api/admin/providers/update-key', authAdmin, (req, res) => {
+    try {
+        const { index, apiKey } = req.body;
+        if (index < 0 || index >= PROVIDERS_CONFIG.length) {
+            return res.json({ success: false, message: 'Index tidak valid' });
+        }
+        if (!apiKey || apiKey.trim().length < 5) {
+            return res.json({ success: false, message: 'API key tidak valid' });
+        }
+        PROVIDERS_CONFIG[index].apiKey = apiKey.trim();
+        saveProviders();
+        notifAdd('info', 'API Key Diperbarui',
+            `Provider #${index + 1} API key diupdate`, 'info');
+        res.json({ success: true });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
@@ -1046,19 +1107,30 @@ app.post('/api/admin/providers/test', authAdmin, async (req, res) => {
             return res.json({ success: false, message: 'Index tidak valid' });
         }
         const p = PROVIDERS_CONFIG[index];
-        const provider = PROVIDERS[p.name];
-        const model = p.models[0];
+
+        let callFn, baseUrl, models;
+        if (p.customEndpoint) {
+            callFn = callOpenAICompatible;
+            baseUrl = p.customEndpoint;
+            models = p.models;
+        } else {
+            const provider = PROVIDERS[p.name];
+            if (!provider) return res.json({ success: false, message: 'Provider tidak dikenal' });
+            callFn = provider.call;
+            baseUrl = provider.baseUrl;
+            models = p.models || provider.models;
+        }
 
         const testConv = [{ role: 'user', text: 'Balas dengan: OK' }];
-        const text = await provider.call({
+        const text = await callFn({
             apiKey: p.apiKey,
-            model,
-            baseUrl: provider.baseUrl,
+            model: models[0],
+            baseUrl,
             systemPrompt: 'Balas singkat.',
             conversation: testConv
         });
 
-        res.json({ success: true, message: `Aktif: "${text.slice(0, 50)}"`, model });
+        res.json({ success: true, message: `Aktif: "${text.slice(0, 50)}"`, model: models[0] });
     } catch (err) {
         const msg = String(err?.message || err);
         let advice = 'Gagal';
@@ -1070,15 +1142,118 @@ app.post('/api/admin/providers/test', authAdmin, async (req, res) => {
 });
 
 // ============================================================
-// UNANSWERED QUESTIONS ENDPOINTS
+// FEEDBACK ENDPOINTS
+// ============================================================
+app.post('/api/feedback', async (req, res) => {
+    try {
+        const { question, answer, rating, sessionId, provider, model, source } = req.body;
+        if (!question || !answer || !['good', 'bad'].includes(rating)) {
+            return res.status(400).json({ error: 'Data tidak valid' });
+        }
+        addFeedback(question, answer, rating, sessionId, { provider, model, source });
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.get('/api/admin/feedback/stats', authAdmin, (req, res) => {
+    res.json(getStats());
+});
+
+app.get('/api/admin/feedback/list', authAdmin, (req, res) => {
+    res.json({ items: getFeedbackList(200) });
+});
+
+app.get('/api/admin/feedback/bad', authAdmin, (req, res) => {
+    res.json({ items: getBadExamples(50) });
+});
+
+app.get('/api/admin/feedback/good', authAdmin, (req, res) => {
+    res.json({ items: getGoodExamples(50) });
+});
+
+app.post('/api/admin/feedback/clear', authAdmin, (req, res) => {
+    const { analytics } = req.body || {};
+    if (analytics) clearAnalytics();
+    else clearFeedback();
+    res.json({ success: true });
+});
+
+// ============================================================
+// LEARNING ENDPOINTS
+// ============================================================
+app.get('/api/admin/learning/queue', authAdmin, (req, res) => {
+    const filter = req.query.filter || 'all';
+    res.json({
+        stats: getQueueStats(),
+        items: getLearningQueue(filter)
+    });
+});
+
+app.get('/api/admin/learning/stats', authAdmin, (req, res) => {
+    res.json(getQueueStats());
+});
+
+app.post('/api/admin/learning/resolve', authAdmin, (req, res) => {
+    const { id } = req.body;
+    if (resolveQuestion(id)) res.json({ success: true });
+    else res.json({ success: false, message: 'Tidak ditemukan' });
+});
+
+app.post('/api/admin/learning/delete', authAdmin, (req, res) => {
+    const { id } = req.body;
+    if (deleteQuestion(id)) res.json({ success: true });
+    else res.json({ success: false, message: 'Tidak ditemukan' });
+});
+
+app.post('/api/admin/learning/clear-resolved', authAdmin, (req, res) => {
+    clearLearningResolved();
+    res.json({ success: true });
+});
+
+app.post('/api/admin/learning/clear-all', authAdmin, (req, res) => {
+    clearLearningAll();
+    res.json({ success: true });
+});
+
+// ============================================================
+// SUMMARY & INSIGHTS
+// ============================================================
+app.get('/api/admin/summary/latest', authAdmin, (req, res) => {
+    res.json(getLatestSummary() || {});
+});
+
+app.get('/api/admin/summary/list', authAdmin, (req, res) => {
+    const limit = parseInt(req.query.limit) || 30;
+    res.json({ items: getSummaries(limit) });
+});
+
+app.get('/api/admin/summary/knowledge', authAdmin, (req, res) => {
+    res.json(generateKnowledgeSummary(knowledgeChunks));
+});
+
+app.post('/api/admin/summary/generate', authAdmin, (req, res) => {
+    try {
+        const insight = generateDailyInsight(
+            getFeedbackList(500),
+            getLearningQueue('all'),
+            unansweredQuestions
+        );
+        res.json({ success: true, insight });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ============================================================
+// UNANSWERED QUESTIONS
 // ============================================================
 app.get('/api/admin/unanswered', authAdmin, (req, res) => {
     const filter = req.query.filter || 'all';
     let items = [...unansweredQuestions];
-
     if (filter === 'pending') items = items.filter(u => !u.resolved);
     else if (filter === 'resolved') items = items.filter(u => u.resolved);
-
     items.sort((a, b) => new Date(b.lastAsked) - new Date(a.lastAsked));
 
     res.json({
@@ -1119,7 +1294,6 @@ app.post('/api/admin/unanswered/clear', authAdmin, (req, res) => {
     res.json({ success: true, total: unansweredQuestions.length });
 });
 
-// ✅ TAMBAH KE KNOWLEDGE
 app.post('/api/admin/unanswered/add-to-knowledge', authAdmin, (req, res) => {
     try {
         const { id, question, answer, category } = req.body;
@@ -1143,7 +1317,6 @@ app.post('/api/admin/unanswered/add-to-knowledge', authAdmin, (req, res) => {
 
         fs.appendFileSync(knowledgeFile, block, 'utf-8');
 
-        // Tandai sebagai resolved
         if (id) {
             const item = unansweredQuestions.find(u => u.id === id);
             if (item) {
@@ -1153,20 +1326,57 @@ app.post('/api/admin/unanswered/add-to-knowledge', authAdmin, (req, res) => {
             }
         }
 
-        // Reload knowledge
         loadKnowledge();
 
         notifAdd('info', 'Pengetahuan Ditambahkan',
-            `Pertanyaan "${title}" berhasil ditambahkan ke buku pengetahuan`, 'info');
+            `"${title}" berhasil ditambahkan`, 'info');
 
-        console.log(`[KNOWLEDGE] Tambah dari unanswered: ${title}`);
         res.json({
             success: true,
             message: 'Berhasil ditambahkan ke buku pengetahuan',
             chunks: knowledgeChunks.length
         });
     } catch (e) {
-        console.error('[KNOWLEDGE] Gagal tambah:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.post('/api/admin/learning/add-to-knowledge', authAdmin, (req, res) => {
+    try {
+        const { id, question, answer, category } = req.body;
+        if (!question || !answer) {
+            return res.json({ success: false, message: 'Pertanyaan & jawaban wajib diisi' });
+        }
+
+        const timestamp = new Date().toISOString();
+        const title = question.length > 80 ? question.slice(0, 77) + '...' : question;
+
+        let block = `\n\n## ${title}\n\n`;
+        block += `Kata kunci : ${question}\n\n`;
+        block += `Pertanyaan : ${question}\n\n`;
+        block += `Jawaban : ${answer}\n\n`;
+        if (category) block += `Kategori : ${category}\n`;
+
+        const knowledgeFile = path.join(PATHS.knowledge, 'buku-pengetahuan.md');
+        if (!fs.existsSync(knowledgeFile)) {
+            fs.writeFileSync(knowledgeFile, '# Buku Pengetahuan SIVT AI\n', 'utf-8');
+        }
+
+        fs.appendFileSync(knowledgeFile, block, 'utf-8');
+
+        if (id) resolveQuestion(id);
+
+        loadKnowledge();
+
+        notifAdd('info', 'Pengetahuan Ditambahkan',
+            `"${title}" dari learning queue ditambahkan`, 'info');
+
+        res.json({
+            success: true,
+            message: 'Berhasil ditambahkan ke buku pengetahuan',
+            chunks: knowledgeChunks.length
+        });
+    } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
 });
@@ -1325,8 +1535,12 @@ app.get('/api/admin/memory', authAdmin, (req, res) => {
     res.json({
         total: memoryItems.length,
         items: memoryItems.map(m => ({
-            timestamp: m.timestamp, title: m.title, question: m.question,
-            answer: m.answer.slice(0, 200), hit: m.hit, variants: m.variants
+            timestamp: m.timestamp,
+            title: m.title,
+            question: m.question,
+            answer: m.answer,
+            hit: m.hit,
+            variants: m.variants
         }))
     });
 });
@@ -1352,7 +1566,9 @@ app.post('/api/admin/memory/reload', authAdmin, (req, res) => {
 // ============================================================
 app.get('/api/admin/sessions', authAdmin, (req, res) => {
     const list = Object.values(sessions).map(s => ({
-        id: s.id, createdAt: s.createdAt, lastActivity: s.lastActivity,
+        id: s.id,
+        createdAt: s.createdAt,
+        lastActivity: s.lastActivity,
         messageCount: s.messages.length,
         lastMessage: s.messages.length > 0 ? s.messages[s.messages.length - 1].text.slice(0, 80) : ''
     }));
@@ -1399,7 +1615,7 @@ app.get('/api/admin/backups', authAdmin, (req, res) => {
 });
 
 // ============================================================
-// CHAT — RAG + MULTI-PROVIDER + MEMORY + UNANSWERED LOGGING
+// CHAT — AKURAT & TIDAK TERPOTONG
 // ============================================================
 app.post('/api/chat', async (req, res) => {
     const { message, sessionId: incomingSessionId } = req.body;
@@ -1423,17 +1639,50 @@ app.post('/api/chat', async (req, res) => {
         const session = sessionGetOrCreate(incomingSessionId);
         send({ sessionId: session.id });
 
-        // STEP 1: CEK MEMORY
+        // ====================================================
+        // STEP 1: CLASSIFIER
+        // ====================================================
+        const classification = classifyQuestion(userText, knowledgeChunks);
+        console.log(`[CLASSIFY] relevant=${classification.relevant}, conf=${classification.confidence}`);
+
+        if (!classification.relevant || classification.action === 'redirect') {
+            trackEvent('out_of_scope');
+            unansweredAdd(userText, session.id);
+            recordUnansweredQuestion(userText);
+
+            const redirectMsg = generateRedirectMessage(classification.reason, CONFIG.aiName);
+            sessionAddMessage(session.id, 'user', userText);
+            sessionAddMessage(session.id, 'bot', redirectMsg);
+
+            send({ meta: { source: 'redirect', reason: classification.reason } });
+            const text = cleanAIText(redirectMsg);
+            for (let i = 0; i < text.length; i += 8) {
+                send({ delta: text.slice(i, i + 8) });
+                await new Promise(r => setTimeout(r, 10));
+            }
+            send({ done: true });
+            return res.end();
+        }
+
+        // ====================================================
+        // STEP 2: CEK MEMORY DULU (HEMAT TOKEN)
+        // ====================================================
         if (CONFIG.memoryEnabled) {
-            const memResult = memorySearch(userText, memoryItems, CONFIG.memoryMinScore || 40);
+            const memResult = memorySearch(userText, memoryItems, CONFIG.memoryMinScore || 60);
 
             if (memResult.item && memResult.isConfident) {
                 const relevant = validateMemoryRelevance(userText, memResult.item);
 
-                if (relevant) {
-                    console.log(`[MEMORY HIT] skor ${memResult.score}`);
+                // Wajib jawaban lengkap (min 30 char, tidak diakhiri ":")
+                const answerOk = memResult.item.answer &&
+                                 memResult.item.answer.length > 30 &&
+                                 !/:\s*$/.test(memResult.item.answer.trim());
+
+                if (relevant && answerOk) {
+                    console.log(`[MEMORY HIT] skor ${memResult.score} — "${userText.slice(0, 50)}"`);
                     memResult.item.hit = (memResult.item.hit || 0) + 1;
                     memorySave();
+                    trackEvent('memory');
 
                     sessionAddMessage(session.id, 'user', userText);
                     sessionAddMessage(session.id, 'bot', memResult.item.answer);
@@ -1446,28 +1695,34 @@ app.post('/api/chat', async (req, res) => {
                     }
                     send({ done: true });
                     return res.end();
+                } else {
+                    console.log(`[MEMORY SKIP] skor ${memResult.score}, jawaban tidak lengkap`);
                 }
             }
         }
 
-        // STEP 2: RAG
+        // ====================================================
+        // STEP 3: RAG
+        // ====================================================
         const searchResult = searchKnowledge(userText, 6);
-        const relevant = searchResult.chunks;
+        const relevantChunks = searchResult.chunks;
         const confidence = searchResult.confidence;
         let ctx = '';
 
-        if (relevant.length > 0) {
+        if (relevantChunks.length > 0 && confidence >= 40) {
             ctx = '=== KONTEKS DARI BUKU PENGETAHUAN ===\n' +
-                  relevant.map((c, i) => `[Kutipan ${i + 1}]\n${c.text}`).join('\n\n') +
+                  relevantChunks.map((c, i) => `[Kutipan ${i + 1}]\n${c.text}`).join('\n\n') +
                   '\n=== AKHIR KONTEKS ===\n\n';
-            console.log(`[RAG] OK — ${relevant.length} chunk (conf ${confidence})`);
+            console.log(`[RAG] OK — ${relevantChunks.length} chunk (conf ${confidence})`);
         } else {
-            console.log(`[RAG] KOSONG`);
+            console.log(`[RAG] KOSONG / confidence rendah`);
             const suggestions = getSuggestedTopics(6, userText);
             send({ needSuggestions: true, suggestions: suggestions.map(t => t.title) });
         }
 
-        // STEP 3: Bangun conversation
+        // ====================================================
+        // STEP 4: Bangun conversation
+        // ====================================================
         const conversation = [];
 
         if (CONFIG.conversationHistoryEnabled) {
@@ -1487,7 +1742,9 @@ app.post('/api/chat', async (req, res) => {
             conversation[conversation.length - 1].text = userMessageText;
         }
 
-        // STEP 4: Kirim ke AI
+        // ====================================================
+        // STEP 5: Kirim ke AI
+        // ====================================================
         const enabledProviders = PROVIDERS_CONFIG.filter(p =>
             p && p.enabled !== false && p.apiKey && String(p.apiKey).trim().length > 5
         );
@@ -1495,11 +1752,11 @@ app.post('/api/chat', async (req, res) => {
         console.log(`[CHAT] Provider aktif: ${enabledProviders.length} dari ${PROVIDERS_CONFIG.length}`);
 
         if (enabledProviders.length === 0) {
-            send({ error: 'Belum ada provider aktif. Aktifkan minimal 1 di dashboard admin → Provider AI.' });
+            send({ error: 'Belum ada provider aktif. Aktifkan minimal 1 di dashboard admin.' });
             return res.end();
         }
 
-        send({ meta: { source: 'ai', context: relevant.length, confidence } });
+        send({ meta: { source: 'ai', context: relevantChunks.length, confidence } });
 
         let aiResult;
         try {
@@ -1511,16 +1768,26 @@ app.post('/api/chat', async (req, res) => {
             });
         } catch (err) {
             console.error('[AI] Semua provider gagal:', err.message);
-            send({ error: 'Semua provider AI gagal. Coba lagi atau tambah API key.' });
+            send({ error: 'Semua provider AI gagal. Coba lagi.' });
             notifAddThrottled('all_fail', 'danger', 'Semua Provider Gagal',
-                'Cek API key di dashboard. ' + err.message.slice(0, 100), 'danger', 5 * 60 * 1000);
+                'Cek API key di dashboard.', 'danger', 5 * 60 * 1000);
             return res.end();
         }
 
         console.log(`[AI OK] ${aiResult.provider} — ${aiResult.model}`);
-        send({ meta: { provider: aiResult.provider, model: aiResult.model } });
+        send({
+            meta: {
+                provider: aiResult.provider,
+                model: aiResult.model,
+                source: 'ai'
+            }
+        });
 
-        const text = cleanAIText(aiResult.text);
+        // Gunakan teks asli (jangan dipotong)
+        const rawText = aiResult.text;
+        const text = cleanAIText(rawText);
+
+        // Streaming smooth per 8 karakter
         for (let i = 0; i < text.length; i += 8) {
             send({ delta: text.slice(i, i + 8) });
             await new Promise(r => setTimeout(r, 10));
@@ -1529,26 +1796,33 @@ app.post('/api/chat', async (req, res) => {
         sessionAddMessage(session.id, 'user', userText);
         sessionAddMessage(session.id, 'bot', text);
 
-        // STEP 5: Deteksi apakah AI benar-benar jawab atau menolak
+        // ====================================================
+        // STEP 6: Track & Learning
+        // ====================================================
         const isRefusal = /belum ada di buku|belum ada di catatan|tidak tahu|tidak ada info|hubungi petugas langsung|belum yakin/i.test(text);
 
-        // ✅ LOG ke unanswered jika:
-        // - RAG kosong ATAU
-        // - confidence rendah (< 70) ATAU
-        // - AI menolak jawab (refusal)
-        if (relevant.length === 0 || confidence < 70 || isRefusal) {
+        if (isRefusal) {
+            trackEvent('refusal');
             unansweredAdd(userText, session.id);
+            recordUnansweredQuestion(userText);
+        } else if (relevantChunks.length > 0 && confidence >= 70) {
+            trackEvent('rag');
+        } else {
+            trackEvent('answer');
         }
 
-        // STEP 6: Simpan ke memori (hanya kalau jawaban valid dari RAG)
-        if (relevant.length > 0 && confidence >= 70 && !isRefusal) {
-            const addResult = memoryAdd(userText, text, memoryItems, CONFIG.memorySaveThreshold || 30);
-            if (addResult.added) {
-                memorySave();
-                console.log(`[MEMORY] Tersimpan`);
-            } else if (addResult.updated) {
-                memorySave();
-                console.log(`[MEMORY] Hit tambah`);
+        // Simpan memory hanya kalau jawaban LENGKAP & VALID
+        if (relevantChunks.length > 0 && confidence >= 70 && !isRefusal) {
+            const isComplete = text.length > 50 &&
+                               !/:\s*$/.test(text.trim()) &&
+                               !/\.\.\.$/.test(text.trim());
+
+            if (isComplete) {
+                const addResult = memoryAdd(userText, text, memoryItems, CONFIG.memorySaveThreshold || 40);
+                if (addResult.added || addResult.updated) {
+                    memorySave();
+                    console.log(`[MEMORY] ${addResult.added ? 'Tersimpan' : 'Diupdate'}: "${userText.slice(0, 50)}"`);
+                }
             }
         }
 
@@ -1567,7 +1841,7 @@ app.get('/api/topics', (req, res) => {
 });
 
 // ============================================================
-// START
+// START SERVER
 // ============================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
@@ -1578,7 +1852,7 @@ app.listen(PORT, () => {
     PROVIDERS_CONFIG.forEach((p, i) => {
         const mark = p.enabled !== false ? '✓' : '✗';
         const models = (p.models || []).slice(0, 2).join(', ');
-        console.log(`  ${i + 1}. [${mark}] ${p.name} → ${models}`);
+        console.log(`  ${i + 1}. [${mark}] ${p.displayName || p.name} → ${models}`);
     });
     console.log(`Memori         : ${memoryItems.length} item`);
     console.log(`Knowledge      : ${knowledgeChunks.length} chunk`);
