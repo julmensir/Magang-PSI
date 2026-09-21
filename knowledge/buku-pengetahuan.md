@@ -692,3 +692,36 @@ Pertanyaan : Siapa presiden Indonesia?
 Jawaban : Persiden Kita sekrang 2026 ini adalah Parbowo dan dia menjabat sampai 2029
 
 Kategori : Presiden Indoesia
+
+
+## cara membuat Akte NIKA bagimana?
+
+Kata kunci : cara membuat Akte NIKA bagimana?
+
+Pertanyaan : cara membuat Akte NIKA bagimana?
+
+Jawaban : Untuk membuat Akte Nikah (NIKA) di Kemantren Tegalrejo, nih cara dan persyaratan lengkapnya:
+
+Langkah-langkah melalui JSS (Jasa Sosial Elektronik):
+
+Login ke JSS dengan akunmu dan pastikan sudah terhubung ke FREEHOTSPOT JSS (baca petunjuk di atas jika butuh bantuan koneksi).
+Buka aplikasi Pelayanan Kelurahan dan Kecamatan.
+Pilih menu Nikah / Rujuk (NTCR) → Klik Permohonan Baru.
+Isi data diri dan pasangan nikah (NIK, nama, tanggal lahir) secara otomatis atau manual.
+Masukkan data ayah, ibu, saksi (tidak boleh anggota keluarga), dan wali nikah (Nasab/Hakim).
+Upload berkas digital:
+Surat pengantar RT/RW (asli)
+Fotokopi KTP kedua calon mempelai
+Fotokopi KK kedua calon mempelai
+Fotokopi Akta Kelahiran kedua calon mempelai
+Fotokopi Akta Kematian/Perceraian (jika janda/duda)
+Klik Kirim Permohonan dan pantau statusnya.
+Berkas asli wajib dibawa ke kantor untuk verifikasi dan tanda tangan Lurah/Mantri.
+
+Catatan penting:
+
+Hanya warga Yogyakarta yang bisa mengajukan permohonan.
+Pastikan data di JSS sudah lengkap dan benar.
+Jika butuh bantuan, hubungi petugas via WA 0812-3456-7890.
+
+Kategori : Untuk membuat Akte Nikah (NIKA)

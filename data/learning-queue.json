@@ -12,17 +12,6 @@
     "resolvedAt": "2026-09-13T11:49:46.126Z"
   },
   {
-    "id": "lq_1789364335075_wdm7",
-    "question": "akhir dokumen",
-    "original": "AKHIR DOKUMEN",
-    "variants": [],
-    "count": 1,
-    "firstAsked": "2026-09-14T05:38:55.075Z",
-    "lastAsked": "2026-09-14T05:38:55.075Z",
-    "priority": "normal",
-    "resolved": false
-  },
-  {
     "id": "lq_1789364476469_ebxp",
     "question": "apakah di kementrian ini untuk mesin cetak ktp nya ada di kantor?",
     "original": "apakah di kementrian ini untuk mesin cetak KTP nya ada di kantor?",
@@ -85,6 +74,54 @@
     "count": 1,
     "firstAsked": "2026-09-16T01:57:08.211Z",
     "lastAsked": "2026-09-16T01:57:08.211Z",
+    "priority": "normal",
+    "resolved": false
+  },
+  {
+    "id": "lq_1789606513951_9vcv",
+    "question": "cara membuat akte nika bagimana?",
+    "original": "cara membuat Akte NIKA bagimana?",
+    "variants": [
+      "cara membuat akte nika bagimana?"
+    ],
+    "count": 2,
+    "firstAsked": "2026-09-17T00:55:13.951Z",
+    "lastAsked": "2026-09-17T00:56:00.390Z",
+    "priority": "normal",
+    "resolved": false
+  },
+  {
+    "id": "lq_1789740393122_u4t3",
+    "question": "gimana caranya daftar pelatihan warga?",
+    "original": "Gimana caranya daftar pelatihan warga?",
+    "variants": [
+      "gimana caranya daftar pelatihan warga?"
+    ],
+    "count": 2,
+    "firstAsked": "2026-09-18T14:06:33.122Z",
+    "lastAsked": "2026-09-18T14:07:02.764Z",
+    "priority": "normal",
+    "resolved": false
+  },
+  {
+    "id": "lq_1789740411280_nad6",
+    "question": "coba di cara lagi gimana caranya daftar pelatihan warga?",
+    "original": "coba di cara lagi Gimana caranya daftar pelatihan warga?",
+    "variants": [],
+    "count": 1,
+    "firstAsked": "2026-09-18T14:06:51.280Z",
+    "lastAsked": "2026-09-18T14:06:51.280Z",
+    "priority": "normal",
+    "resolved": false
+  },
+  {
+    "id": "lq_1789965132501_hmmf",
+    "question": "saya ingin magang di sini apa biaa?",
+    "original": "saya ingin magang di sini apa biaa?",
+    "variants": [],
+    "count": 1,
+    "firstAsked": "2026-09-21T04:32:12.501Z",
+    "lastAsked": "2026-09-21T04:32:12.501Z",
     "priority": "normal",
     "resolved": false
   }

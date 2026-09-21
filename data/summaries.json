@@ -1,0 +1,25 @@
+[
+  {
+    "id": "ins_1789833600365",
+    "date": "2026-09-19",
+    "feedback": {
+      "total": 0,
+      "good": 0,
+      "bad": 0,
+      "satisfaction": 0
+    },
+    "pendingTopics": [],
+    "unansweredCount": 8,
+    "recommendations": [
+      {
+        "level": "info",
+        "message": "Belum ada feedback hari ini. Ajak user kasih rating ya!"
+      },
+      {
+        "level": "warning",
+        "message": "Ada 8 pertanyaan belum terjawab. Tambahkan ke buku pengetahuan!"
+      }
+    ],
+    "timestamp": "2026-09-19T16:00:00.369Z"
+  }
+]

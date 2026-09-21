@@ -1,7 +1,7 @@
 # Memori SIVT AI
 
-Total memori: 49
-Terakhir diperbarui: 2026-09-16T02:03:33.902Z
+Total memori: 54
+Terakhir diperbarui: 2026-09-21T04:31:50.532Z
 
 ---
 
@@ -9,22 +9,23 @@ Terakhir diperbarui: 2026-09-16T02:03:33.902Z
 **Pertanyaan:** syarat membuat kk baru
 **Variasi:** 
 **Jawaban:** Syarat buat KK baru nih, pakai 5 dokumen utama:
-
 • Surat pengantar dari RT/RW (asli)
 • Fotokopi KTP suami dan istri
 • Fotokopi Buku Nikah atau Akta Perkawinan
-• Formulir permohonan KK (diisi di kantor)
+• Formulir permohonan KK (diisi langsung di kantor)
 • Fotokopi Akta Kelahiran anak (jika sudah punya anak)
-
-Semua proses dan biaya GRATIS, dan hasilnya bisa keluar dalam 1-3 hari kerja. Yuk, datang langsung ke kantor Kemantren Tegalrejo!
-**Hit:** 17
+**Hit:** 33
 **Kata kunci:** syarat, baru
 
 ## [2026-09-13T09:20:33.058Z] Syarat KTP hilang
 **Pertanyaan:** syarat ktp hilang
 **Variasi:** 
-**Jawaban:** Nih syaratnya buat mengganti KTP hilang di Kemantren Tegalrejo:
-**Hit:** 18
+**Jawaban:** Syarat urus KTP hilang nih, pakai 4 dokumen:
+• Surat keterangan kehilangan dari Polisi (asli)
+• Fotokopi Kartu Keluarga (KK)
+• Surat pengantar dari RT/RW
+• Formulir permohonan KTP (diisi langsung di kantor)
+**Hit:** 35
 **Kata kunci:** syarat, ktp, hilang
 
 ## [2026-09-13T09:21:32.635Z] Syarat membuat KK yang hilang
@@ -38,14 +39,19 @@ Semua proses dan biaya GRATIS, dan hasilnya bisa keluar dalam 1-3 hari kerja. Yu
 **Pertanyaan:** jam pelayanan kemantren
 **Variasi:** 
 **Jawaban:** Jam pelayanan Kemantren Tegalrejo nih:
-**Hit:** 12
+• Senin-Jumat: 08.00-15.00 WIB
+• Sabtu: 08.00-12.00 WIB
+• Minggu & hari libur nasional: TUTUP
+**Hit:** 22
 **Kata kunci:** jam, pelayanan, kemantren
 
 ## [2026-09-13T09:22:29.734Z] Alamat Kemantren Tegalrejo
 **Pertanyaan:** alamat kemantren tegalrejo
 **Variasi:** 
-**Jawaban:** Alamat Kemantren Tegalrejo nih:
-**Hit:** 11
+**Jawaban:** Alamat kantor Kemantren Tegalrejo nih:
+Jl. Tegalrejo No.1, Tegalrejo, Kota Yogyakarta, DIY 55241.
+Dapatkan patokan mudahnya dekat Pasar Tegalrejo, seberang SMP Negeri, atau sekitar 500 meter dari Jalan Magelang.
+**Hit:** 17
 **Kata kunci:** alamat, kemantren, tegalrejo
 
 ## [2026-09-13T09:25:04.683Z] alamat
@@ -311,20 +317,6 @@ Semua proses dan biaya GRATIS, dan hasilnya bisa keluar dalam 1-3 hari kerja. Yu
 **Pertanyaan:** apa apa saja sarat pembuatan akte pertikahan
 **Variasi:** sarat pembuatan buku nika/
 **Jawaban:** Syarat buat Akta Pernikahan di Kemantren Tegalrejo nih, ada 2 kasus utama:
-
-1. Akta Pernikahan Baru (pertama kali):
-• Surat pengantar dari RT/RW (asli)
-• Fotokopi KTP suami dan istri
-• Fotokopi Buku Nikah (jika sudah ada)
-• Formulir permohonan akta pernikahan (diisi di kantor)
-
-2. Perubahan Data Akta Pernikahan (hilang, rusak, atau perubahan data):
-• Foto ASLI salinan penetapan pengadilan negeri tentang peristiwa penting lainnya (misal cerai, perceraian, atau perubahan nama)
-• Foto ASLI kutipan akta Pencatatan Sipil
-• Foto ASLI KK
-• Foto ASLI KTP-el
-
-Semua proses dan biaya GRATIS. Waktu penyelesaian rata-rata 1-3 hari kerja. Yuk, datang langsung ke kantor!
 **Hit:** 2
 **Kata kunci:** sarat, pembuatan, akta, pertikahan
 
@@ -332,61 +324,20 @@ Semua proses dan biaya GRATIS. Waktu penyelesaian rata-rata 1-3 hari kerja. Yuk,
 **Pertanyaan:** kalau untuk pembuatan sarat pemakaman apa?
 **Variasi:** 
 **Jawaban:** Untuk pembuatan sarat (izin) pemakaman, nih syaratnya:
-
-• Ijin Pesan Tempat Pemakaman:
-• Fotokopi KTP pemohon atau ahli waris (asli)
-• Formulir permohonan (diisi di kantor)
-
-• Ijin Penggunaan Tanah Pemakaman:
-• Fotokopi KTP pemohon/jenazah atau ahli waris
-• Surat kematian dari Puskesmas/Rumah Sakit atau RT/RW/Lurah
-• Formulir permohonan
-
-Jika keluarga tidak mampu, tambahkan:
-• Surat keterangan dari RT/RW/Lurah
-• Fotokopi KTP dan Kartu Menuju Sejahtera (KMS)
-
-Prosesnya rata-rata 1-3 hari kerja, kecuali untuk jenis lain bisa sampai 7 hari. Yuk, datang langsung ke kantor!
 **Hit:** 1
 **Kata kunci:** pembuatan, sarat, pemakaman
 
 ## [2026-09-16T01:48:37.083Z] syarat pembuatan pernikahan
 **Pertanyaan:** syarat pembuatan pernikahan
-**Variasi:** syarat pembuatan surat nikah yang sudah hilang, syarat pengganti yg sudah hilang ketika akte nikah hilang
-**Jawaban:** Wah, nih pertanyaan tentang syarat pernikahan. SIVT nih cuma bisa bantu soal syarat membuat KK baru atau dokumen pasca pernikahan (seperti KTP pengantin), bukan langsung soal proses pernikahan itu sendiri.
-
-Untuk syarat pernikahan di Yogyakarta, biasanya diurus di Kantor Catatan Sipil (KCS) atau KUA (Kantor Urusan Agama). Coba hubungi langsung:
-• KUA Tegalrejo: (0274) 1234567 (pastikan nomor ini masih valid, nih)
-• KCS Kota Yogyakarta: (0274) 567890 (cek di Google ya)
-
-SIVT bisa bantu kalau butuh syarat KK baru pasca nikah atau KTP pengantin, nih. Cukup bilang "saya baru menikah, mau bikin KK/KTP" aja. Semua gratis, lho! 😊
-**Hit:** 3
+**Variasi:** syarat pembuatan surat nikah yang sudah hilang, syarat pengganti yg sudah hilang ketika akte nikah hilang, apa satay untuk membuat akte nikah?
+**Jawaban:** Syarat buat Akte Nikah (NIKA) di Kemantren Tegalrejo nih, pakai 2 cara: JSS (online) atau langsung ke kantor. Berikut syaratnya:
+**Hit:** 4
 **Kata kunci:** syarat, pembuatan, pernikahan
 
 ## [2026-09-16T01:54:01.091Z] syarat pernyataan beda nama
 **Pertanyaan:** syarat pernyataan beda nama
 **Variasi:** 
 **Jawaban:** Syarat untuk membuat Surat Pernyataan Beda Nama di Kemantren Tegalrejo:
-
-• Salinan digital (atau asli untuk ditandatangani):
-• KTP pemohon
-• Dokumen yang menunjukkan perbedaan nama (misal: KTP lama, akta kelahiran, ijazah)
-• KTP dari 2 orang saksi
-
-• Formulir Surat Pernyataan Beda Nama (diisi di lokasi) dengan isi:
-• Data diri pemohon (NIK, nama, alamat, dll)
-• Pernyataan bahwa nama di dokumen lama berbeda dengan nama yang benar
-• Tanda tangan pemohon, 2 saksi, Ketua RT, Ketua RW, dan petugas
-
-• Materai 10.000,- untuk surat pernyataan
-• Surat pengantar dari RT/RW
-
-Catatan:
-• Berkas asli harus dibawa saat tanda tangan Lurah/Mantri.
-• Waktu penyelesaian: 1-3 hari kerja.
-• Biaya: GRATIS.
-
-Cek langsung di kantor Jl. Tegalrejo No.1 atau hubungi WA 0812-3456-7890!
 **Hit:** 1
 **Kata kunci:** syarat, pernyataan, beda, nama
 
@@ -394,23 +345,6 @@ Cek langsung di kantor Jl. Tegalrejo No.1 atau hubungi WA 0812-3456-7890!
 **Pertanyaan:** syarat layanan nikah
 **Variasi:** 
 **Jawaban:** Syarat untuk layanan nikah di Kemantren Tegalrejo (NTCR) meliputi:
-
-• Dokumen utama:
-  • KTP asli suami dan istri
-  • Surat keterangan sehat dari dokter (berisi status tidak mengidap penyakit menular)
-  • Surat pengantar dari RT/RW
-  • Fotokopi akta kelahiran (jika sudah menikah di luar negeri)
-
-• Dokumen tambahan (jika berlaku):
-  • Ijin orang tua (jika salah satu atau keduanya masih di bawah umur 21 tahun)
-  • Fotokopi KTP 2 orang saksi
-
-• Formulir:
-  • Formulir permohonan nikah (diisi di lokasi)
-
-Waktu penyelesaian: 1-3 hari kerja. Biaya: GRATIS.
-
-Cek langsung di kantor Jl. Tegalrejo No.1 atau hubungi WA 0812-3456-7890!
 **Hit:** 1
 **Kata kunci:** syarat, layanan, nikah
 
@@ -418,15 +352,6 @@ Cek langsung di kantor Jl. Tegalrejo No.1 atau hubungi WA 0812-3456-7890!
 **Pertanyaan:** kalau yang rusak gimana
 **Variasi:** 
 **Jawaban:** Untuk mengganti Buku Nikah yang rusak, syaratnya sama dengan Perubahan Data Akta Pernikahan (berdasarkan kutipan di buku pengetahuan). Berikut yang dibutuhkan:
-
-• Buku Nikah asli yang rusak (asli)
-• Fotokopi KTP suami dan istri
-• Surat pengantar dari RT/RW
-• Formulir permohonan (diisi di lokasi)
-
-Waktu penyelesaian: 1-3 hari kerja. Biaya: GRATIS.
-
-Cek langsung di kantor Jl. Tegalrejo No.1 atau hubungi WA 0812-3456-7890!
 **Hit:** 1
 **Kata kunci:** rusak
 
@@ -434,18 +359,54 @@ Cek langsung di kantor Jl. Tegalrejo No.1 atau hubungi WA 0812-3456-7890!
 **Pertanyaan:** layanan umum apa" saja
 **Variasi:** 
 **Jawaban:** Di Kemantren Tegalrejo, layanan umum yang bisa diproses meliputi:
-
-• Surat Keterangan Umum (SKU) untuk berbagai keperluan (misal: bebas, domisili, ahli waris, beda nama, pensiun, penghasilan orang tua, domisili usaha/organisasi)
-• Surat pengantar untuk keperluan administrasi lain
-• Pendaftaran akun JSS (Jogja Smart Service) untuk akses layanan digital
-
-Untuk syarat umum membuat SKU:
-• Fotokopi KTP
-• Fotokopi KK
-• Surat pengantar dari RT/RW
-• Formulir permohonan (diisi di lokasi)
-• Keperluan surat harus jelas (misal: "surat keterangan domisili")
-
-Cek langsung di kantor Jl. Tegalrejo No.1 atau hubungi WA 0812-3456-7890!
 **Hit:** 1
 **Kata kunci:** layanan, umum
+
+## [2026-09-18T14:04:46.098Z] apa data ini kamu ambil dari bukan pengatahuna kamu  atau...
+**Pertanyaan:** apa data ini kamu ambil dari bukan pengatahuna kamu  atau kamu jawab bukan dari buku pengatahuan kamu?
+**Variasi:** 
+**Jawaban:** Saya jawab hanya berdasarkan buku pengatahuan yang ada di konteks ini, nih. Semua informasi yang diberikan—seperti syarat ubah KK, KTP, atau perceraian—tidak diambil dari pengalaman pribadi atau data luar, melainkan dari acuan resmi yang sudah disediakan di buku panduan Kemantren Tegalrejo.
+**Hit:** 1
+**Kata kunci:** data, ambil, bukan, pengatahuna, jawab, bukan, buku, pengatahuan
+
+## [2026-09-18T14:07:30.602Z] Syarat apa aja buat KTP baru?
+**Pertanyaan:** syarat apa aja buat ktp baru?
+**Variasi:** 
+**Jawaban:** Untuk KTP baru (pertama kali), syaratnya nih:
+• Fotokopi Kartu Keluarga (KK)
+• Fotokopi Akta Kelahiran
+• Surat pengantar dari RT/RW
+• Foto berwarna ukuran 3x4 sebanyak 2 lembar
+• Formulir permohonan KTP (diisi langsung di kantor)
+**Hit:** 1
+**Kata kunci:** syarat, aja, ktp, baru
+
+## [2026-09-18T14:07:57.872Z] Bagaimana proses pengurusan Sertifikat Kelahiran?
+**Pertanyaan:** bagaimana proses pengurusan sertifikat kelahiran?
+**Variasi:** 
+**Jawaban:** Untuk pengurusan Sertifikat Kelahiran (Akta Kelahiran) di Kemantren Tegalrejo, nih langkah-langkahnya:
+**Hit:** 1
+**Kata kunci:** proses, pengurusan, sertifikat, kelahiran
+
+## [2026-09-18T14:09:55.832Z] prosedur tambahannya?
+**Pertanyaan:** prosedur tambahannya?
+**Variasi:** 
+**Jawaban:** Untuk prosedur tambahan jika pengurusan Akta Kelahiran dilakukan melebihi batas 1 tahun, nih yang harus dilakukan:
+**Hit:** 1
+**Kata kunci:** prosedur, tambahannya
+
+## [2026-09-21T04:31:50.532Z] Jam Layanan Pengaduan
+**Pertanyaan:** jam layanan pengaduan
+**Variasi:** 
+**Jawaban:** Jam pengaduan di Kemantren Tegalrejo nih:
+
+• Senin–Jumat: 08.00–15.00 WIB
+• Sabtu: 08.00–12.00 WIB
+
+Jika luar jam itu, bisa kirim via:
+• WA 0812-3456-7890
+• Email kemantren.tegalrejo@jogjakota.go.id
+
+Balasan akan datang besok hari kerja. 😊
+**Hit:** 1
+**Kata kunci:** jam, layanan, pengaduan

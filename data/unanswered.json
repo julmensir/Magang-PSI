@@ -62,5 +62,42 @@
     "firstAsked": "2026-09-16T01:57:08.209Z",
     "lastAsked": "2026-09-16T01:57:08.209Z",
     "resolved": false
+  },
+  {
+    "id": "uq_1789606513948_zagd",
+    "question": "cara membuat Akte NIKA bagimana?",
+    "sessionId": "sess_1789542480353_pbuuvyyt",
+    "count": 2,
+    "firstAsked": "2026-09-17T00:55:13.948Z",
+    "lastAsked": "2026-09-17T00:56:00.386Z",
+    "resolved": true,
+    "resolvedAt": "2026-09-17T00:59:10.068Z"
+  },
+  {
+    "id": "uq_1789740393111_94sm",
+    "question": "Gimana caranya daftar pelatihan warga?",
+    "sessionId": "sess_1789629388691_kcm4v2jr",
+    "count": 2,
+    "firstAsked": "2026-09-18T14:06:33.111Z",
+    "lastAsked": "2026-09-18T14:07:02.763Z",
+    "resolved": false
+  },
+  {
+    "id": "uq_1789740411279_steq",
+    "question": "coba di cara lagi Gimana caranya daftar pelatihan warga?",
+    "sessionId": "sess_1789629388691_kcm4v2jr",
+    "count": 1,
+    "firstAsked": "2026-09-18T14:06:51.279Z",
+    "lastAsked": "2026-09-18T14:06:51.279Z",
+    "resolved": false
+  },
+  {
+    "id": "uq_1789965132479_r4tv",
+    "question": "saya ingin magang di sini apa biaa?",
+    "sessionId": "sess_1789964962407_bm2i6uk7",
+    "count": 1,
+    "firstAsked": "2026-09-21T04:32:12.479Z",
+    "lastAsked": "2026-09-21T04:32:12.479Z",
+    "resolved": false
   }
 ]
