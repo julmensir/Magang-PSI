@@ -15,7 +15,7 @@ import cron from 'node-cron';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 
-import { PROVIDERS, callWithFallback, callGemini, callOpenAICompatible } from './lib/providers.js';
+import { PROVIDERS, callWithFallback, callGemini, callOpenAICompatible, callEmbeddingWithFallback } from './lib/providers.js';
 import { tokenize, memorySearch, memoryAdd, validateMemoryRelevance, makeBigrams, stemID } from './lib/memory.js';
 import { classifyQuestion, generateRedirectMessage } from './lib/classifier.js';
 import {
@@ -32,6 +32,17 @@ import {
     summarizerInit, generateKnowledgeSummary, generateDailyInsight,
     getSummaries, getLatestSummary
 } from './lib/summarizer.js';
+import GraphEngine from './lib/graph-engine.js';
+import { processAdminAnswer } from './lib/unified-learning.js';
+import { HybridRAG } from './lib/rag-hybrid.js';
+import { EmbeddingEngine } from './lib/rag-embedding.js';
+import {
+    getProvidersByRole,
+    getFirstProviderByRole,
+    getRoleStats,
+    normalizeRoles,
+    VALID_ROLES
+} from './lib/provider-role.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -112,7 +123,7 @@ function encryptBuffer(buffer) {
 }
 
 // ============================================================
-// BERSIHKAN FORMAT MARKDOWN DARI AI
+// BERSIHKAN FORMAT MARKDOWN
 // ============================================================
 function cleanAIText(text) {
     if (!text) return '';
@@ -138,6 +149,7 @@ const PATHS = {
     keys: path.join(__dirname, 'data', 'keys.json.enc'),
     unanswered: path.join(__dirname, 'data', 'unanswered.json'),
     knowledge: path.join(__dirname, 'knowledge'),
+    knowledgeFile: path.join(__dirname, 'knowledge', 'buku-pengetahuan.md'),
     memoryFile: path.join(__dirname, 'memory', 'memory.md'),
     sessionsDir: path.join(__dirname, 'memory', 'sessions'),
     backupsDir: path.join(__dirname, 'data', 'backups'),
@@ -149,6 +161,23 @@ const PATHS = {
 Object.values(PATHS).forEach(p => {
     const dir = p.includes('.') ? path.dirname(p) : p;
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+// ============================================================
+// GRAPH ENGINE
+// ============================================================
+const GRAPH_PATH = path.join(PATHS.dataDir, 'knowledge-graph.json');
+const brain = new GraphEngine({ savePath: GRAPH_PATH });
+
+// ============================================================
+// RAG HYBRID + EMBEDDING ENGINE
+// ============================================================
+const EMBEDDING_CACHE_PATH = path.join(PATHS.dataDir, 'embedding-cache.json');
+const embeddingEngine = new EmbeddingEngine({ cachePath: EMBEDDING_CACHE_PATH });
+const hybridRAG = new HybridRAG({
+    embeddingEngine,
+    rewriteEnabled: true,
+    cacheTtl: 60 * 60 * 1000
 });
 
 // ============================================================
@@ -234,6 +263,15 @@ function unansweredAdd(question, sessionId) {
     unansweredQuestions.push(item);
     unansweredSave();
     return item;
+}
+
+function unansweredResolve(id) {
+    const item = unansweredQuestions.find(u => u.id === id);
+    if (!item) return false;
+    item.resolved = true;
+    item.resolvedAt = new Date().toISOString();
+    unansweredSave();
+    return true;
 }
 
 unansweredInit();
@@ -334,11 +372,21 @@ process.on('SIGINT', () => {
             );
         } catch (_) {}
     }
+    try {
+        console.log('[GRAPH] Menyimpan knowledge graph...');
+        brain.save();
+        console.log('[GRAPH] Tersimpan.');
+    } catch (err) {
+        console.warn('[GRAPH] Gagal save:', err.message);
+    }
+    try {
+        embeddingEngine._saveCache();
+    } catch (_) {}
     process.exit(0);
 });
 
 // ============================================================
-// PROVIDERS CONFIG
+// PROVIDERS
 // ============================================================
 let PROVIDERS_CONFIG = loadProviders();
 
@@ -353,6 +401,7 @@ function loadProviders() {
         return parsed.map(p => ({
             ...p,
             enabled: p.enabled !== false,
+            roles: normalizeRoles(p.roles || ['chat']),
             models: Array.isArray(p.models) && p.models.length > 0
                 ? p.models
                 : (PROVIDERS[p.name]?.models || [])
@@ -460,6 +509,20 @@ function buildChunkIndex() {
             keywordWords: new Set(keywordWords),
             keywordBigrams: new Set(makeBigrams(keywordWords))
         };
+
+        try {
+            brain.addKnowledge(chunk.text, chunk.source);
+        } catch (err) {
+            console.warn('[GRAPH] Gagal ingest chunk:', err.message);
+        }
+    }
+
+    try {
+        const stats = brain.getStats();
+        console.log(`[GRAPH] ${stats.nodes} nodes, ${stats.edges} edges`);
+        brain.save();
+    } catch (err) {
+        console.warn('[GRAPH] Gagal save:', err.message);
     }
 }
 
@@ -527,45 +590,96 @@ function loadKnowledge() {
     buildChunkIndex();
     extractTopics();
     console.log(`[KNOWLEDGE] Total ${knowledgeChunks.length} chunk siap.`);
+
+    // Build RAG Hybrid index
+    buildRAGIndex().catch(err => {
+        console.warn('[HYBRID-RAG] Build index gagal:', err.message);
+    });
 }
 
-function searchKnowledge(question, topK = 6) {
-    if (knowledgeChunks.length === 0) return { chunks: [], confidence: 0 };
-    if (!knowledgeChunks[0]._index) buildChunkIndex();
+async function buildRAGIndex() {
+    try {
+        const embedProviders = PROVIDERS_CONFIG.filter(p =>
+            p.enabled !== false && p.apiKey &&
+            String(p.apiKey).trim().length > 5 &&
+            (p.roles || ['chat']).includes('embedding')
+        );
 
-    const qWords = tokenize(question);
-    if (qWords.length === 0) return { chunks: [], confidence: 0 };
-
-    const qStems = qWords.map(stemID);
-    const qBigrams = makeBigrams(qWords);
-
-    const scored = knowledgeChunks.map((chunk) => {
-        const idx = chunk._index;
-        let score = 0;
-        for (const w of qWords) if (idx.words.has(w)) score += 3;
-        for (const s of qStems) if (idx.stems.has(s)) score += 2;
-        for (const bg of qBigrams) if (idx.bigrams.has(bg)) score += 6;
-        for (const w of qWords) if (idx.keywordWords.has(w)) score += 4;
-        for (const bg of qBigrams) if (idx.keywordBigrams.has(bg)) score += 8;
-
-        const title = detectTitle(chunk.text);
-        if (title) {
-            const titleWords = tokenize(title);
-            for (const w of qWords) if (titleWords.includes(w)) score += 5;
+        let embeddingCall = null;
+        if (embedProviders.length > 0) {
+            embeddingCall = async (text) => {
+                const result = await callEmbeddingWithFallback(embedProviders, { text });
+                return result.vector;
+            };
+            console.log(`[HYBRID-RAG] ${embedProviders.length} provider embedding aktif: ${embedProviders.map(p => p.name).join(', ')}`);
+        } else {
+            console.log('[HYBRID-RAG] Tidak ada provider embedding. Cuma BM25 yang aktif.');
         }
-        return { chunk, score };
-    });
 
-    const filtered = scored.filter(s => s.score > 0).sort((a, b) => b.score - a.score).slice(0, topK);
-    const chunks = filtered.map(s => s.chunk);
-    const topScore = filtered.length > 0 ? filtered[0].score : 0;
+        await hybridRAG.buildIndex(knowledgeChunks, {
+            embeddingCall,
+            onProgress: (done, total) => {
+                if (done % 30 === 0 || done === total) {
+                    console.log(`[EMBEDDING] Progress: ${done}/${total}`);
+                }
+            }
+        });
 
-    let confidence = 0;
-    if (topScore >= 15) confidence = 100;
-    else if (topScore >= 8) confidence = 70;
-    else if (topScore >= 4) confidence = 40;
+        const stats = hybridRAG.getStats();
+        console.log(`[HYBRID-RAG] Siap: BM25=${stats.bm25Docs} docs, Embedding=${stats.embedding?.indexedChunks || 0} vecs`);
+    } catch (err) {
+        console.warn('[HYBRID-RAG] Build index gagal:', err.message);
+    }
+}
 
-    return { chunks, confidence };
+async function searchKnowledge(question, topK = 6) {
+    if (knowledgeChunks.length === 0) return { chunks: [], confidence: 0 };
+
+    try {
+        const chatProviders = getProvidersByRole(PROVIDERS_CONFIG, PROVIDERS, 'chat');
+        let llmCall = null;
+        if (chatProviders.length > 0) {
+            llmCall = async ({ systemPrompt, conversation }) => {
+                const result = await callWithFallback(chatProviders, {
+                    systemPrompt,
+                    conversation,
+                    fileData: null,
+                    fileMimeType: null
+                });
+                return result.text;
+            };
+        }
+
+        const embedProviders = PROVIDERS_CONFIG.filter(p =>
+            p.enabled !== false && p.apiKey &&
+            String(p.apiKey).trim().length > 5 &&
+            (p.roles || ['chat']).includes('embedding')
+        );
+
+        let embeddingCall = null;
+        if (embedProviders.length > 0) {
+            embeddingCall = async (text) => {
+                const result = await callEmbeddingWithFallback(embedProviders, { text });
+                return result.vector;
+            };
+        }
+
+        const result = await hybridRAG.search(question, {
+            topK,
+            llmCall,
+            embeddingCall,
+            useCache: true
+        });
+
+        return {
+            chunks: result.chunks,
+            confidence: result.debug.confidence,
+            debug: result.debug
+        };
+    } catch (err) {
+        console.error('[RAG-HYBRID] Error:', err.message);
+        return { chunks: [], confidence: 0 };
+    }
 }
 
 function getSuggestedTopics(limit = 8, query = '') {
@@ -619,10 +733,10 @@ Info umum:
 - Telepon: (0274) 123456
 - Semua layanan GRATIS`,
     memoryEnabled: true,
-    memoryMinScore: 60,
-    memorySaveThreshold: 40,
+    memoryMinScore: 75,
+    memorySaveThreshold: 55,
     conversationHistoryEnabled: true,
-    conversationHistorySize: 10,
+    conversationHistorySize: 20,
     rateLimitPerSession: 20,
     strictMode: true
 };
@@ -675,7 +789,9 @@ async function runBackup() {
             { src: PATHS.unanswered, name: 'unanswered.json' },
             { src: path.join(PATHS.dataDir, 'feedback.json'), name: 'feedback.json' },
             { src: path.join(PATHS.dataDir, 'learning-queue.json'), name: 'learning-queue.json' },
-            { src: path.join(PATHS.dataDir, 'analytics.json'), name: 'analytics.json' }
+            { src: path.join(PATHS.dataDir, 'analytics.json'), name: 'analytics.json' },
+            { src: GRAPH_PATH, name: 'knowledge-graph.json' },
+            { src: EMBEDDING_CACHE_PATH, name: 'embedding-cache.json' }
         ];
         for (const f of files) {
             if (fs.existsSync(f.src)) fs.copyFileSync(f.src, path.join(tmpDir, f.name));
@@ -830,18 +946,38 @@ app.get('/api/admin/check', (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
+    const graphStats = brain.getStats();
+    const ragStats = hybridRAG.getStats();
     res.json({
         status: 'ok',
         uptime: process.uptime(),
-        providers: PROVIDERS_CONFIG.map(p => ({ name: p.name, models: p.models.length, enabled: p.enabled })),
+        providers: PROVIDERS_CONFIG.map(p => ({
+            name: p.name,
+            roles: p.roles || ['chat'],
+            models: p.models.length,
+            enabled: p.enabled
+        })),
         knowledgeChunks: knowledgeChunks.length,
         topics: availableTopics.length,
         memory: memoryItems.length,
         sessions: Object.keys(sessions).length,
-        unanswered: unansweredQuestions.filter(u => !u.resolved).length
+        unanswered: unansweredQuestions.filter(u => !u.resolved).length,
+        graph: {
+            nodes: graphStats.nodes,
+            edges: graphStats.edges,
+            lastSaveAt: graphStats.lastSaveAt
+        },
+        rag: {
+            bm25Docs: ragStats.bm25Docs,
+            embeddingVecs: ragStats.embedding?.indexedChunks || 0,
+            cacheSize: ragStats.cache?.size || 0,
+            cacheHitRate: ragStats.cache?.hitRate || '0%',
+            rewrites: ragStats.rewrites || 0,
+            totalQueries: ragStats.totalQueries || 0
+        },
+        roles: getRoleStats(PROVIDERS_CONFIG, PROVIDERS)
     });
 });
-
 
 // ============================================================
 // DASHBOARD STATS
@@ -881,6 +1017,7 @@ app.get('/api/admin/dashboard/stats', authAdmin, (req, res) => {
             list: PROVIDERS_CONFIG.map(p => ({
                 name: p.displayName || PROVIDERS[p.name]?.name || p.name,
                 enabled: p.enabled !== false,
+                roles: p.roles || ['chat'],
                 models: p.models.length
             }))
         },
@@ -911,7 +1048,10 @@ app.get('/api/admin/dashboard/stats', authAdmin, (req, res) => {
         },
         feedback: feedbackStats.feedback,
         analytics: feedbackStats.analytics,
-        learning: queueStats
+        learning: queueStats,
+        graph: brain.getStats(),
+        rag: hybridRAG.getStats(),
+        roles: getRoleStats(PROVIDERS_CONFIG, PROVIDERS)
     });
 });
 
@@ -953,7 +1093,9 @@ app.get('/api/admin/config', authAdmin, (req, res) => {
             index: i,
             name: p.name,
             displayName: p.displayName || PROVIDERS[p.name]?.name || p.name,
+            roles: p.roles || ['chat'],
             models: p.models,
+            embeddingModels: p.embeddingModels || PROVIDERS[p.name]?.embeddingModels || [],
             masked: p.apiKey ? p.apiKey.slice(0, 8) + '...' + p.apiKey.slice(-6) : '',
             enabled: p.enabled !== false,
             isCustom: !!p.customEndpoint,
@@ -970,7 +1112,10 @@ app.get('/api/admin/config', authAdmin, (req, res) => {
         sessionCount: Object.keys(sessions).length,
         unreadNotifications: notifications.filter(n => !n.read).length,
         pendingUnanswered: unansweredQuestions.filter(u => !u.resolved).length,
-        pendingLearning: getQueueStats().pending
+        pendingLearning: getQueueStats().pending,
+        graph: brain.getStats(),
+        rag: hybridRAG.getStats(),
+        roles: getRoleStats(PROVIDERS_CONFIG, PROVIDERS)
     });
 });
 
@@ -998,11 +1143,380 @@ app.post('/api/admin/config', authAdmin, (req, res) => {
 });
 
 // ============================================================
-// PROVIDERS — CRUD + CUSTOM
+// GRAPH ENDPOINTS
+// ============================================================
+app.get('/api/admin/graph/stats', authAdmin, (req, res) => {
+    res.json(brain.getStats());
+});
+
+app.post('/api/admin/graph/save', authAdmin, (req, res) => {
+    const ok = brain.save();
+    res.json({ success: ok, stats: brain.getStats() });
+});
+
+app.post('/api/admin/graph/rebuild', authAdmin, (req, res) => {
+    try {
+        console.log('[GRAPH] Rebuild dipicu oleh admin...');
+        const Graph = brain.graph.constructor;
+        brain.graph = new Graph({ multi: false, type: 'undirected' });
+        brain.dirty = true;
+        loadKnowledge();
+        const stats = brain.getStats();
+        notifAdd('info', 'Graph Rebuilt',
+            `Graph dibangun ulang: ${stats.nodes} nodes, ${stats.edges} edges`, 'info');
+        res.json({ success: true, stats });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.get('/api/admin/graph/query', authAdmin, (req, res) => {
+    const q = req.query.q || '';
+    if (!q) return res.json({ error: 'Query kosong' });
+    const result = brain.queryContext(q, { maxDepth: 1, maxNodes: 20 });
+    res.json(result);
+});
+
+app.get('/api/admin/graph/visualize', authAdmin, (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 300;
+        const minDegree = parseInt(req.query.minDegree) || 1;
+
+        const g = brain.graph;
+        if (!g || g.order === 0) {
+            return res.json({ nodes: [], edges: [], stats: { total: 0, shown: 0 } });
+        }
+
+        const nodeList = [];
+        g.forEachNode((node, attrs) => {
+            const deg = g.degree(node);
+            if (deg >= minDegree) {
+                nodeList.push({
+                    id: node,
+                    label: attrs.label || node,
+                    degree: deg,
+                    sources: attrs.sources ? [...attrs.sources] : []
+                });
+            }
+        });
+
+        nodeList.sort((a, b) => b.degree - a.degree);
+        const topNodes = nodeList.slice(0, limit);
+        const topNodeIds = new Set(topNodes.map(n => n.id));
+
+        const maxDeg = topNodes.length > 0 ? topNodes[0].degree : 1;
+        const nodes = topNodes.map(n => {
+            const ratio = n.degree / maxDeg;
+            const size = 10 + Math.min(40, n.degree * 2);
+            const r = Math.round(30 + ratio * 200);
+            const g2 = Math.round(100 - ratio * 60);
+            const b = Math.round(200 - ratio * 150);
+            const color = `rgb(${r}, ${g2}, ${b})`;
+
+            return {
+                id: n.id,
+                label: n.label,
+                value: n.degree,
+                title: `"${n.label}"\nDegree: ${n.degree}\nSumber: ${n.sources.slice(0, 3).join(', ')}${n.sources.length > 3 ? '...' : ''}`,
+                color: {
+                    background: color,
+                    border: '#0d47a1',
+                    highlight: { background: '#ff6b6b', border: '#dc3545' }
+                },
+                size: size,
+                font: { size: 12, face: 'Arial' },
+                shape: 'dot'
+            };
+        });
+
+        const edges = [];
+        const seenEdges = new Set();
+        g.forEachEdge((edge, attrs, source, target) => {
+            if (!topNodeIds.has(source) || !topNodeIds.has(target)) return;
+            const key = source < target ? `${source}|${target}` : `${target}|${source}`;
+            if (seenEdges.has(key)) return;
+            seenEdges.add(key);
+
+            const weight = attrs.weight || 1;
+            const label = attrs.label || '';
+            edges.push({
+                from: source,
+                to: target,
+                value: weight,
+                width: Math.min(5, 1 + Math.log2(weight + 1)),
+                label: label ? label.slice(0, 20) : undefined,
+                title: label ? `Relasi: ${label} (bobot: ${weight})` : `Bobot: ${weight}`
+            });
+        });
+
+        res.json({
+            nodes,
+            edges,
+            stats: {
+                totalNodes: nodeList.length,
+                totalEdges: edges.length,
+                shown: topNodes.length,
+                maxDegree: maxDeg,
+                minDegree
+            }
+        });
+    } catch (err) {
+        console.error('[GRAPH-VIZ] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/admin/graph/node/:id', authAdmin, (req, res) => {
+    try {
+        const nodeId = decodeURIComponent(req.params.id);
+        const g = brain.graph;
+
+        if (!g.hasNode(nodeId)) {
+            return res.json({ found: false, node: null, neighbors: [] });
+        }
+
+        const attrs = g.getNodeAttributes(nodeId);
+        const neighborIds = g.neighbors(nodeId);
+        const neighbors = neighborIds.map(nid => ({
+            id: nid,
+            label: g.getNodeAttributes(nid).label || nid,
+            weight: g.hasEdge(nodeId, nid) ? (g.getEdgeAttribute(nodeId, nid, 'weight') || 1) : 1
+        })).sort((a, b) => b.weight - a.weight);
+
+        res.json({
+            found: true,
+            node: {
+                id: nodeId,
+                label: attrs.label || nodeId,
+                degree: neighborIds.length,
+                sources: attrs.sources ? [...attrs.sources] : [],
+                createdAt: attrs.createdAt
+            },
+            neighbors: neighbors.slice(0, 50)
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============================================================
+// GRAPH ENRICH
+// ============================================================
+let enrichInProgress = false;
+let enrichProgress = { done: 0, total: 0, startedAt: null };
+
+app.get('/api/admin/graph/enrich/status', authAdmin, (req, res) => {
+    res.json({
+        inProgress: enrichInProgress,
+        progress: enrichProgress
+    });
+});
+
+app.post('/api/admin/graph/enrich', authAdmin, async (req, res) => {
+    if (enrichInProgress) {
+        return res.json({ success: false, message: 'Enrich sedang berjalan. Tunggu selesai.' });
+    }
+
+    const maxChunks = parseInt(req.body.maxChunks) || 30;
+    const concurrency = parseInt(req.body.concurrency) || 2;
+
+    const enabledProviders = getProvidersByRole(PROVIDERS_CONFIG, PROVIDERS, 'enrichment');
+    const enrichProviders = enabledProviders.length > 0
+        ? enabledProviders
+        : PROVIDERS_CONFIG.filter(p => p.enabled !== false && p.apiKey && String(p.apiKey).trim().length > 5);
+
+    if (enrichProviders.length === 0) {
+        return res.json({ success: false, message: 'Tidak ada provider enrichment aktif.' });
+    }
+
+    enrichInProgress = true;
+    enrichProgress = { done: 0, total: 0, startedAt: new Date().toISOString() };
+
+    res.json({ success: true, message: 'Enrich dimulai di background. Cek status via /api/admin/graph/enrich/status' });
+
+    (async () => {
+        try {
+            const { batchEnrich } = await import('./lib/graph-enricher.js');
+
+            const chunks = knowledgeChunks
+                .filter(c => c.text.length >= 100)
+                .sort((a, b) => b.text.length - a.text.length)
+                .slice(0, maxChunks);
+
+            enrichProgress.total = chunks.length;
+
+            const llmCall = async ({ systemPrompt, conversation }) => {
+                const result = await callWithFallback(enrichProviders, {
+                    systemPrompt,
+                    conversation,
+                    fileData: null,
+                    fileMimeType: null
+                });
+                return result.text;
+            };
+
+            const results = await batchEnrich(chunks, llmCall, {
+                concurrency,
+                onProgress: (done, total) => {
+                    enrichProgress.done = done;
+                    enrichProgress.total = total;
+                    console.log(`[ENRICH] Progress: ${done}/${total}`);
+                }
+            });
+
+            let totalTriples = 0;
+            let totalEdges = 0;
+            for (const r of results) {
+                if (r.triples && r.triples.length > 0) {
+                    const added = brain.addTriples(r.triples, `enrich:${r.source}`);
+                    totalTriples += r.triples.length;
+                    totalEdges += added.edges;
+                }
+            }
+
+            brain.save();
+
+            const stats = brain.getStats();
+            notifAdd('info', 'Graph Enriched',
+                `${totalTriples} triple dari ${chunks.length} chunk. Total: ${stats.nodes} nodes, ${stats.edges} edges`, 'info');
+
+            console.log(`[ENRICH] Selesai! ${totalTriples} triple, +${totalEdges} edges. Total: ${stats.nodes} nodes, ${stats.edges} edges`);
+        } catch (err) {
+            console.error('[ENRICH] Error:', err.message);
+            notifAdd('danger', 'Graph Enrich Gagal', err.message, 'danger');
+        } finally {
+            enrichInProgress = false;
+        }
+    })();
+});
+
+// ============================================================
+// RAG ENDPOINTS
+// ============================================================
+app.get('/api/admin/rag/stats', authAdmin, (req, res) => {
+    res.json(hybridRAG.getStats());
+});
+
+app.post('/api/admin/rag/rebuild', authAdmin, async (req, res) => {
+    try {
+        await buildRAGIndex();
+        const stats = hybridRAG.getStats();
+        notifAdd('info', 'RAG Rebuilt',
+            `BM25: ${stats.bm25Docs} docs, Embedding: ${stats.embedding?.indexedChunks || 0} vecs`, 'info');
+        res.json({ success: true, stats });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// ============================================================
+// PROVIDER ROLE ENDPOINTS
+// ============================================================
+app.post('/api/admin/providers/update-roles', authAdmin, (req, res) => {
+    try {
+        const { index, roles } = req.body;
+        if (index < 0 || index >= PROVIDERS_CONFIG.length) {
+            return res.json({ success: false, message: 'Index tidak valid' });
+        }
+
+        const oldRoles = PROVIDERS_CONFIG[index].roles || ['chat'];
+        const normalized = normalizeRoles(roles);
+        PROVIDERS_CONFIG[index].roles = normalized;
+        saveProviders();
+
+        const hadEmbed = oldRoles.includes('embedding');
+        const hasEmbed = normalized.includes('embedding');
+
+        if (hadEmbed !== hasEmbed) {
+            setTimeout(() => {
+                buildRAGIndex().catch(e => console.warn('[RAG] Rebuild gagal:', e.message));
+            }, 500);
+        }
+
+        notifAdd('info', 'Role Provider Diperbarui',
+            `Provider #${index + 1} → [${normalized.join(', ')}]`, 'info');
+        res.json({ success: true, roles: normalized });
+    } catch (e) {
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+app.get('/api/admin/providers/roles-stats', authAdmin, (req, res) => {
+    res.json(getRoleStats(PROVIDERS_CONFIG, PROVIDERS));
+});
+
+// ============================================================
+// UNIFIED LEARNING
+// ============================================================
+app.post('/api/admin/unified/add-to-knowledge', authAdmin, async (req, res) => {
+    try {
+        const { id, question, answer, category, source } = req.body;
+
+        if (!question || !answer) {
+            return res.json({ success: false, message: 'Pertanyaan & jawaban wajib diisi' });
+        }
+
+        const enabledProviders = getProvidersByRole(PROVIDERS_CONFIG, PROVIDERS, 'enrichment');
+        const enrichProviders = enabledProviders.length > 0
+            ? enabledProviders
+            : PROVIDERS_CONFIG.filter(p => p.enabled !== false && p.apiKey && String(p.apiKey).trim().length > 5);
+
+        let llmCall = null;
+        if (enrichProviders.length > 0) {
+            llmCall = async ({ systemPrompt, conversation }) => {
+                const result = await callWithFallback(enrichProviders, {
+                    systemPrompt,
+                    conversation,
+                    fileData: null,
+                    fileMimeType: null
+                });
+                return result.text;
+            };
+        }
+
+        const result = await processAdminAnswer({
+            question: {
+                id,
+                question,
+                source: source || 'unanswered'
+            },
+            answer,
+            category,
+            knowledgeFile: PATHS.knowledgeFile,
+            brain,
+            loadKnowledge,
+            resolveUnanswered: unansweredResolve,
+            resolveLearning: resolveQuestion,
+            notifAdd,
+            llmCall
+        });
+
+        if (result.success) {
+            res.json({
+                success: true,
+                message: 'Berhasil! Pengetahuan & Graph diperbarui.',
+                steps: result.steps,
+                chunks: knowledgeChunks.length
+            });
+        } else {
+            res.json({
+                success: false,
+                message: 'Gagal: ' + result.errors.join('; '),
+                steps: result.steps
+            });
+        }
+    } catch (e) {
+        console.error('[UNIFIED] Error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// ============================================================
+// PROVIDERS CRUD
 // ============================================================
 app.post('/api/admin/providers/add', authAdmin, (req, res) => {
     try {
-        const { name, apiKey, models, customEndpoint, displayName } = req.body;
+        const { name, apiKey, models, embeddingModels, customEndpoint, displayName, roles } = req.body;
         if (!name || !apiKey) {
             return res.json({ success: false, message: 'Nama provider & API key wajib diisi' });
         }
@@ -1016,15 +1530,24 @@ app.post('/api/admin/providers/add', authAdmin, (req, res) => {
             });
         }
 
+        const normalizedRoles = normalizeRoles(roles || ['chat']);
+
         const newProvider = {
             name,
             apiKey: apiKey.trim(),
+            roles: normalizedRoles,
             models: Array.isArray(models) && models.length > 0
                 ? models
                 : (PROVIDERS[name]?.models || []),
             enabled: true,
             addedAt: new Date().toISOString()
         };
+
+        if (Array.isArray(embeddingModels) && embeddingModels.length > 0) {
+            newProvider.embeddingModels = embeddingModels;
+        } else if (PROVIDERS[name]?.embeddingModels) {
+            newProvider.embeddingModels = PROVIDERS[name].embeddingModels;
+        }
 
         if (!isBuiltIn) {
             newProvider.customEndpoint = customEndpoint;
@@ -1034,7 +1557,12 @@ app.post('/api/admin/providers/add', authAdmin, (req, res) => {
         PROVIDERS_CONFIG.push(newProvider);
         saveProviders();
         notifAdd('info', 'Provider Ditambahkan',
-            `${newProvider.displayName || PROVIDERS[name]?.name || name} berhasil ditambahkan`, 'info');
+            `${newProvider.displayName || PROVIDERS[name]?.name || name} [${normalizedRoles.join(', ')}]`, 'info');
+
+        if (normalizedRoles.includes('embedding')) {
+            setTimeout(() => buildRAGIndex().catch(() => {}), 500);
+        }
+
         res.json({ success: true, total: PROVIDERS_CONFIG.length });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
@@ -1046,8 +1574,13 @@ app.post('/api/admin/providers/remove', authAdmin, (req, res) => {
     if (index < 0 || index >= PROVIDERS_CONFIG.length) {
         return res.json({ success: false, message: 'Index tidak valid' });
     }
-    PROVIDERS_CONFIG.splice(index, 1);
+    const removed = PROVIDERS_CONFIG.splice(index, 1)[0];
     saveProviders();
+
+    if ((removed.roles || []).includes('embedding')) {
+        setTimeout(() => buildRAGIndex().catch(() => {}), 500);
+    }
+
     res.json({ success: true, total: PROVIDERS_CONFIG.length });
 });
 
@@ -1067,7 +1600,7 @@ app.post('/api/admin/providers/toggle', authAdmin, (req, res) => {
 
 app.post('/api/admin/providers/update-models', authAdmin, (req, res) => {
     try {
-        const { index, models } = req.body;
+        const { index, models, embeddingModels } = req.body;
         if (index < 0 || index >= PROVIDERS_CONFIG.length) {
             return res.json({ success: false, message: 'Index tidak valid' });
         }
@@ -1075,8 +1608,22 @@ app.post('/api/admin/providers/update-models', authAdmin, (req, res) => {
             return res.json({ success: false, message: 'Models harus array minimal 1' });
         }
         PROVIDERS_CONFIG[index].models = models.map(m => String(m).trim()).filter(Boolean);
+
+        if (Array.isArray(embeddingModels) && embeddingModels.length > 0) {
+            PROVIDERS_CONFIG[index].embeddingModels = embeddingModels.map(m => String(m).trim()).filter(Boolean);
+        }
+
         saveProviders();
-        res.json({ success: true, models: PROVIDERS_CONFIG[index].models });
+
+        if ((PROVIDERS_CONFIG[index].roles || []).includes('embedding')) {
+            setTimeout(() => buildRAGIndex().catch(() => {}), 500);
+        }
+
+        res.json({
+            success: true,
+            models: PROVIDERS_CONFIG[index].models,
+            embeddingModels: PROVIDERS_CONFIG[index].embeddingModels || []
+        });
     } catch (e) {
         res.status(500).json({ success: false, message: e.message });
     }
@@ -1103,12 +1650,28 @@ app.post('/api/admin/providers/update-key', authAdmin, (req, res) => {
 
 app.post('/api/admin/providers/test', authAdmin, async (req, res) => {
     try {
-        const { index } = req.body;
+        const { index, type } = req.body;
         if (index < 0 || index >= PROVIDERS_CONFIG.length) {
             return res.json({ success: false, message: 'Index tidak valid' });
         }
         const p = PROVIDERS_CONFIG[index];
 
+        // Test embedding
+        if (type === 'embedding') {
+            try {
+                const result = await callEmbeddingWithFallback([p], { text: 'test' });
+                res.json({
+                    success: true,
+                    message: `Embedding OK (${result.vector.length} dim)`,
+                    model: result.model
+                });
+            } catch (err) {
+                res.json({ success: false, message: 'Embedding gagal: ' + err.message.slice(0, 150) });
+            }
+            return;
+        }
+
+        // Test chat
         let callFn, baseUrl, models;
         if (p.customEndpoint) {
             callFn = callOpenAICompatible;
@@ -1143,7 +1706,7 @@ app.post('/api/admin/providers/test', authAdmin, async (req, res) => {
 });
 
 // ============================================================
-// FEEDBACK ENDPOINTS
+// FEEDBACK
 // ============================================================
 app.post('/api/feedback', async (req, res) => {
     try {
@@ -1182,7 +1745,7 @@ app.post('/api/admin/feedback/clear', authAdmin, (req, res) => {
 });
 
 // ============================================================
-// LEARNING ENDPOINTS
+// LEARNING
 // ============================================================
 app.get('/api/admin/learning/queue', authAdmin, (req, res) => {
     const filter = req.query.filter || 'all';
@@ -1219,7 +1782,7 @@ app.post('/api/admin/learning/clear-all', authAdmin, (req, res) => {
 });
 
 // ============================================================
-// SUMMARY & INSIGHTS
+// SUMMARY
 // ============================================================
 app.get('/api/admin/summary/latest', authAdmin, (req, res) => {
     res.json(getLatestSummary() || {});
@@ -1248,7 +1811,7 @@ app.post('/api/admin/summary/generate', authAdmin, (req, res) => {
 });
 
 // ============================================================
-// UNANSWERED QUESTIONS
+// UNANSWERED
 // ============================================================
 app.get('/api/admin/unanswered', authAdmin, (req, res) => {
     const filter = req.query.filter || 'all';
@@ -1295,95 +1858,8 @@ app.post('/api/admin/unanswered/clear', authAdmin, (req, res) => {
     res.json({ success: true, total: unansweredQuestions.length });
 });
 
-app.post('/api/admin/unanswered/add-to-knowledge', authAdmin, (req, res) => {
-    try {
-        const { id, question, answer, category } = req.body;
-        if (!question || !answer) {
-            return res.json({ success: false, message: 'Pertanyaan & jawaban wajib diisi' });
-        }
-
-        const timestamp = new Date().toISOString();
-        const title = question.length > 80 ? question.slice(0, 77) + '...' : question;
-
-        let block = `\n\n## ${title}\n\n`;
-        block += `Kata kunci : ${question}\n\n`;
-        block += `Pertanyaan : ${question}\n\n`;
-        block += `Jawaban : ${answer}\n\n`;
-        if (category) block += `Kategori : ${category}\n`;
-
-        const knowledgeFile = path.join(PATHS.knowledge, 'buku-pengetahuan.md');
-        if (!fs.existsSync(knowledgeFile)) {
-            fs.writeFileSync(knowledgeFile, '# Buku Pengetahuan SIVT AI\n', 'utf-8');
-        }
-
-        fs.appendFileSync(knowledgeFile, block, 'utf-8');
-
-        if (id) {
-            const item = unansweredQuestions.find(u => u.id === id);
-            if (item) {
-                item.resolved = true;
-                item.resolvedAt = timestamp;
-                unansweredSave();
-            }
-        }
-
-        loadKnowledge();
-
-        notifAdd('info', 'Pengetahuan Ditambahkan',
-            `"${title}" berhasil ditambahkan`, 'info');
-
-        res.json({
-            success: true,
-            message: 'Berhasil ditambahkan ke buku pengetahuan',
-            chunks: knowledgeChunks.length
-        });
-    } catch (e) {
-        res.status(500).json({ success: false, message: e.message });
-    }
-});
-
-app.post('/api/admin/learning/add-to-knowledge', authAdmin, (req, res) => {
-    try {
-        const { id, question, answer, category } = req.body;
-        if (!question || !answer) {
-            return res.json({ success: false, message: 'Pertanyaan & jawaban wajib diisi' });
-        }
-
-        const timestamp = new Date().toISOString();
-        const title = question.length > 80 ? question.slice(0, 77) + '...' : question;
-
-        let block = `\n\n## ${title}\n\n`;
-        block += `Kata kunci : ${question}\n\n`;
-        block += `Pertanyaan : ${question}\n\n`;
-        block += `Jawaban : ${answer}\n\n`;
-        if (category) block += `Kategori : ${category}\n`;
-
-        const knowledgeFile = path.join(PATHS.knowledge, 'buku-pengetahuan.md');
-        if (!fs.existsSync(knowledgeFile)) {
-            fs.writeFileSync(knowledgeFile, '# Buku Pengetahuan SIVT AI\n', 'utf-8');
-        }
-
-        fs.appendFileSync(knowledgeFile, block, 'utf-8');
-
-        if (id) resolveQuestion(id);
-
-        loadKnowledge();
-
-        notifAdd('info', 'Pengetahuan Ditambahkan',
-            `"${title}" dari learning queue ditambahkan`, 'info');
-
-        res.json({
-            success: true,
-            message: 'Berhasil ditambahkan ke buku pengetahuan',
-            chunks: knowledgeChunks.length
-        });
-    } catch (e) {
-        res.status(500).json({ success: false, message: e.message });
-    }
-});
-
 // ============================================================
-// UPLOAD LOGO
+// LOGO
 // ============================================================
 const logoUpload = multer({
     dest: PATHS.tmp,
@@ -1494,7 +1970,7 @@ app.post('/api/admin/notifications/clear', authAdmin, (req, res) => {
 });
 
 // ============================================================
-// KNOWLEDGE
+// KNOWLEDGE FILE
 // ============================================================
 const upload = multer({
     dest: PATHS.tmp,
@@ -1616,7 +2092,7 @@ app.get('/api/admin/backups', authAdmin, (req, res) => {
 });
 
 // ============================================================
-// CHAT — AKURAT & TIDAK TERPOTONG
+// CHAT
 // ============================================================
 app.post('/api/chat', async (req, res) => {
     const { message, sessionId: incomingSessionId } = req.body;
@@ -1640,9 +2116,6 @@ app.post('/api/chat', async (req, res) => {
         const session = sessionGetOrCreate(incomingSessionId);
         send({ sessionId: session.id });
 
-        // ====================================================
-        // STEP 1: CLASSIFIER
-        // ====================================================
         const classification = classifyQuestion(userText, knowledgeChunks);
         console.log(`[CLASSIFY] relevant=${classification.relevant}, conf=${classification.confidence}`);
 
@@ -1665,16 +2138,11 @@ app.post('/api/chat', async (req, res) => {
             return res.end();
         }
 
-        // ====================================================
-        // STEP 2: CEK MEMORY DULU (HEMAT TOKEN)
-        // ====================================================
         if (CONFIG.memoryEnabled) {
-            const memResult = memorySearch(userText, memoryItems, CONFIG.memoryMinScore || 60);
+            const memResult = memorySearch(userText, memoryItems, CONFIG.memoryMinScore || 75);
 
             if (memResult.item && memResult.isConfident) {
                 const relevant = validateMemoryRelevance(userText, memResult.item);
-
-                // Wajib jawaban lengkap (min 30 char, tidak diakhiri ":")
                 const answerOk = memResult.item.answer &&
                                  memResult.item.answer.length > 30 &&
                                  !/:\s*$/.test(memResult.item.answer.trim());
@@ -1697,37 +2165,53 @@ app.post('/api/chat', async (req, res) => {
                     send({ done: true });
                     return res.end();
                 } else {
-                    console.log(`[MEMORY SKIP] skor ${memResult.score}, jawaban tidak lengkap`);
+                    console.log(`[MEMORY SKIP] skor ${memResult.score}, tidak relevan`);
                 }
             }
         }
 
-        // ====================================================
-        // STEP 3: RAG
-        // ====================================================
-        const searchResult = searchKnowledge(userText, 6);
+        // RAG Hybrid + Graph
+        let graphContext = '';
+        try {
+            const gRes = brain.queryContext(userText, { maxDepth: 1, maxNodes: 15 });
+            if (gRes.context && gRes.context.length > 10) {
+                graphContext = gRes.context;
+                console.log(`[GRAPH] ${gRes.nodes.length} node relevan ditemukan`);
+            }
+        } catch (err) {
+            console.warn('[GRAPH] Query gagal:', err.message);
+        }
+
+        const searchResult = await searchKnowledge(userText, 6);
         const relevantChunks = searchResult.chunks;
         const confidence = searchResult.confidence;
+
+        if (searchResult.debug) {
+            console.log(`[RAG-DEBUG] BM25=${searchResult.debug.bm25Count} Semantic=${searchResult.debug.semanticCount} Fused=${searchResult.debug.fusedCount} Rewritten="${(searchResult.debug.rewrittenQuery || '(none)').slice(0, 60)}"`);
+        }
+
         let ctx = '';
 
+        if (graphContext) {
+            ctx += '=== KONTEKS DARI KNOWLEDGE GRAPH ===\n' +
+                   graphContext + '\n' +
+                   '=== AKHIR KONTEKS GRAPH ===\n\n';
+        }
+
         if (relevantChunks.length > 0 && confidence >= 40) {
-            ctx = '=== KONTEKS DARI BUKU PENGETAHUAN ===\n' +
-                  relevantChunks.map((c, i) => `[Kutipan ${i + 1}]\n${c.text}`).join('\n\n') +
-                  '\n=== AKHIR KONTEKS ===\n\n';
+            ctx += '=== KONTEKS DARI BUKU PENGETAHUAN ===\n' +
+                   relevantChunks.map((c, i) => `[Kutipan ${i + 1}]\n${c.text}`).join('\n\n') +
+                   '\n=== AKHIR KONTEKS ===\n\n';
             console.log(`[RAG] OK — ${relevantChunks.length} chunk (conf ${confidence})`);
-        } else {
-            console.log(`[RAG] KOSONG / confidence rendah`);
+        } else if (!graphContext) {
+            console.log(`[RAG & GRAPH] KOSONG`);
             const suggestions = getSuggestedTopics(6, userText);
             send({ needSuggestions: true, suggestions: suggestions.map(t => t.title) });
         }
 
-        // ====================================================
-        // STEP 4: Bangun conversation
-        // ====================================================
         const conversation = [];
-
         if (CONFIG.conversationHistoryEnabled) {
-            const recent = session.messages.slice(-(CONFIG.conversationHistorySize || 10));
+            const recent = session.messages.slice(-(CONFIG.conversationHistorySize || 20));
             for (const m of recent) {
                 conversation.push({ role: m.role, text: m.text });
             }
@@ -1743,17 +2227,12 @@ app.post('/api/chat', async (req, res) => {
             conversation[conversation.length - 1].text = userMessageText;
         }
 
-        // ====================================================
-        // STEP 5: Kirim ke AI
-        // ====================================================
-        const enabledProviders = PROVIDERS_CONFIG.filter(p =>
-            p && p.enabled !== false && p.apiKey && String(p.apiKey).trim().length > 5
-        );
+        const enabledProviders = getProvidersByRole(PROVIDERS_CONFIG, PROVIDERS, 'chat');
 
-        console.log(`[CHAT] Provider aktif: ${enabledProviders.length} dari ${PROVIDERS_CONFIG.length}`);
+        console.log(`[CHAT] Provider chat aktif: ${enabledProviders.length} dari ${PROVIDERS_CONFIG.length}`);
 
         if (enabledProviders.length === 0) {
-            send({ error: 'Belum ada provider aktif. Aktifkan minimal 1 di dashboard admin.' });
+            send({ error: 'Belum ada provider chat aktif. Aktifkan minimal 1 di dashboard admin.' });
             return res.end();
         }
 
@@ -1784,11 +2263,9 @@ app.post('/api/chat', async (req, res) => {
             }
         });
 
-        // Gunakan teks asli (jangan dipotong)
         const rawText = aiResult.text;
         const text = cleanAIText(rawText);
 
-        // Streaming smooth per 8 karakter
         for (let i = 0; i < text.length; i += 8) {
             send({ delta: text.slice(i, i + 8) });
             await new Promise(r => setTimeout(r, 10));
@@ -1797,9 +2274,6 @@ app.post('/api/chat', async (req, res) => {
         sessionAddMessage(session.id, 'user', userText);
         sessionAddMessage(session.id, 'bot', text);
 
-        // ====================================================
-        // STEP 6: Track & Learning
-        // ====================================================
         const isRefusal = /belum ada di buku|belum ada di catatan|tidak tahu|tidak ada info|hubungi petugas langsung|belum yakin/i.test(text);
 
         if (isRefusal) {
@@ -1812,14 +2286,13 @@ app.post('/api/chat', async (req, res) => {
             trackEvent('answer');
         }
 
-        // Simpan memory hanya kalau jawaban LENGKAP & VALID
         if (relevantChunks.length > 0 && confidence >= 70 && !isRefusal) {
             const isComplete = text.length > 50 &&
                                !/:\s*$/.test(text.trim()) &&
                                !/\.\.\.$/.test(text.trim());
 
             if (isComplete) {
-                const addResult = memoryAdd(userText, text, memoryItems, CONFIG.memorySaveThreshold || 40);
+                const addResult = memoryAdd(userText, text, memoryItems, CONFIG.memorySaveThreshold || 55);
                 if (addResult.added || addResult.updated) {
                     memorySave();
                     console.log(`[MEMORY] ${addResult.added ? 'Tersimpan' : 'Diupdate'}: "${userText.slice(0, 50)}"`);
@@ -1852,15 +2325,36 @@ app.listen(PORT, () => {
     console.log(`Provider AI    : ${PROVIDERS_CONFIG.length} terdaftar (${activeCount} aktif)`);
     PROVIDERS_CONFIG.forEach((p, i) => {
         const mark = p.enabled !== false ? '✓' : '✗';
+        const roles = (p.roles || ['chat']).join(',');
         const models = (p.models || []).slice(0, 2).join(', ');
-        console.log(`  ${i + 1}. [${mark}] ${p.displayName || p.name} → ${models}`);
+        console.log(`  ${i + 1}. [${mark}] ${p.displayName || p.name} [${roles}] → ${models}`);
     });
     console.log(`Memori         : ${memoryItems.length} item`);
     console.log(`Knowledge      : ${knowledgeChunks.length} chunk`);
     console.log(`Unanswered     : ${unansweredQuestions.filter(u => !u.resolved).length} pending`);
     console.log('============================================');
+
     memoryInit();
     sessionInit();
+
+    console.log('[GRAPH] Memuat knowledge graph dari disk...');
+    const loaded = brain.load();
+    if (!loaded) {
+        console.log('[GRAPH] Tidak ada graph tersimpan, akan dibangun dari knowledge...');
+    }
+
     loadKnowledge();
-    console.log('');
+
+    const gs = brain.getStats();
+    console.log(`[GRAPH] Total: ${gs.nodes} nodes, ${gs.edges} edges`);
+
+    setTimeout(() => {
+        const ragStats = hybridRAG.getStats();
+        console.log('============================================');
+        console.log(`RAG Hybrid  : BM25=${ragStats.bm25Docs} docs`);
+        console.log(`Embedding   : ${ragStats.embedding?.indexedChunks || 0}/${ragStats.embedding?.totalChunks || 0} chunks`);
+        console.log(`Query Cache : ${ragStats.cache?.size || 0} entries (HitRate ${ragStats.cache?.hitRate || '0%'})`);
+        console.log('============================================');
+        console.log('');
+    }, 3000);
 });

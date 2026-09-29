@@ -1,5 +1,5 @@
 // ============================================================
-// SIVT AI — Frontend Script (Ultimate Version - Final)
+// SIVT AI — Frontend Script (v3 — RAG Hybrid + Provider Role)
 // ============================================================
 
 let currentUser = null;
@@ -11,10 +11,14 @@ let currentUnansweredFilter = 'pending';
 let currentLearningFilter = 'pending';
 let currentFeedbackFilter = 'all';
 let currentProviderMode = 'builtin';
+let graphNetwork = null;
+let graphNodesDataset = null;
+let graphEdgesDataset = null;
+let enrichPollTimer = null;
+let currentProviderRoles = ['chat'];
 
-// ============================================================
-// LOGO SIZES
-// ============================================================
+const VALID_ROLES = ['chat', 'embedding', 'enrichment', 'query-rewriter'];
+
 const LOGO_SIZES = {
     small:  { chat: 36, login: 80,  sidebar: 36 },
     medium: { chat: 44, login: 90,  sidebar: 44 },
@@ -22,9 +26,6 @@ const LOGO_SIZES = {
     xlarge: { chat: 72, login: 130, sidebar: 72 }
 };
 
-// ============================================================
-// INIT
-// ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('chatPage').style.display = 'flex';
     document.getElementById('loginPage').style.display = 'none';
@@ -48,9 +49,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     initChatInput();
+    initRoleCheckboxes();
     await loadPublicConfig();
     await checkAdminSession();
 });
+
+// ============================================================
+// ROLE CHECKBOXES INIT
+// ============================================================
+function initRoleCheckboxes() {
+    ['newProviderRoles', 'customProviderRoles'].forEach(containerId => {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.addEventListener('change', () => {
+                const span = cb.parentElement.querySelector('.role-badge');
+                if (span) {
+                    span.classList.toggle('inactive', !cb.checked);
+                }
+            });
+        });
+    });
+}
+
+function getSelectedRoles(containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return ['chat'];
+    const roles = [];
+    container.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+        roles.push(cb.value);
+    });
+    return roles.length > 0 ? roles : ['chat'];
+}
 
 // ============================================================
 // CEK SESSION ADMIN
@@ -72,7 +102,6 @@ async function checkAdminSession() {
             await loadAdminConfig();
             showPage('dashboard');
             setInterval(loadNotificationsBadge, 30000);
-            console.log('[AUTH] Session dipulihkan:', data.username);
         }
     } catch (err) {
         console.warn('[AUTH] Cek session gagal:', err.message);
@@ -93,7 +122,6 @@ function initChatInput() {
     }
 
     input.addEventListener('input', autoResize);
-
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -318,6 +346,7 @@ function showPage(page) {
         general: 'Umum', logo: 'Logo & Branding', theme: 'Warna Tema',
         providers: 'Provider AI', prompt: 'Prompt AI',
         knowledge: 'Pengetahuan',
+        graph: 'Knowledge Graph',
         unanswered: 'Pertanyaan Tak Terjawab',
         learning: 'Auto-Learning',
         feedback: 'Feedback & Akurasi',
@@ -348,6 +377,7 @@ function loadCurrentPage() {
     if (page === 'unanswered') loadUnanswered();
     if (page === 'learning') loadLearningQueue();
     if (page === 'feedback') loadFeedback();
+    if (page === 'graph') loadGraphVisualization();
 }
 
 function toggleSidebar() {
@@ -358,11 +388,10 @@ function toggleSidebar() {
 }
 
 // ============================================================
-// FORMAT TEKS AI → HTML RAPI (TANPA **)
+// FORMAT TEKS AI
 // ============================================================
 function formatText(text) {
     if (!text) return '';
-
     const div = document.createElement('div');
     div.textContent = text;
     let html = div.innerHTML;
@@ -378,8 +407,7 @@ function formatText(text) {
     let listType = null;
 
     for (let i = 0; i < lines.length; i++) {
-        const raw = lines[i];
-        const line = raw.trim();
+        const line = lines[i].trim();
 
         if (line === '') {
             if (listOpen) {
@@ -424,7 +452,6 @@ function formatText(text) {
     }
 
     if (listOpen) out.push(`</${listType}>`);
-
     return out.join('');
 }
 
@@ -613,9 +640,7 @@ async function sendFeedback(btn, rating, container, meta) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                question,
-                answer,
-                rating,
+                question, answer, rating,
                 sessionId: chatSessionId,
                 provider: meta.provider,
                 model: meta.model,
@@ -626,8 +651,6 @@ async function sendFeedback(btn, rating, container, meta) {
         container.innerHTML = rating === 'good'
             ? '<span class="fb-thanks fb-thanks-good"><i class="fas fa-check-circle"></i> Terima kasih!</span>'
             : '<span class="fb-thanks fb-thanks-bad"><i class="fas fa-clipboard-check"></i> Kami akan perbaiki</span>';
-
-        console.log(`[FEEDBACK] ${rating} untuk: "${question.slice(0, 50)}"`);
     } catch (err) {
         console.error('Feedback error:', err);
         container.innerHTML = '<span class="fb-thanks" style="color:var(--danger);">Gagal kirim</span>';
@@ -736,7 +759,6 @@ function adminFetch(url, opts = {}) {
         }
     });
 }
-
 // ============================================================
 // DASHBOARD
 // ============================================================
@@ -761,20 +783,16 @@ async function loadDashboard() {
             `${data.knowledge.files} file, ${data.knowledge.topics} topik`;
 
         document.getElementById('statMemory').textContent = data.memory.total;
-        document.getElementById('statMemorySub').textContent =
-            `${data.memory.totalHits} total hit`;
+        document.getElementById('statMemorySub').textContent = `${data.memory.totalHits} total hit`;
 
         document.getElementById('statSessions').textContent = data.sessions.total;
-        document.getElementById('statSessionsSub').textContent =
-            `${data.sessions.messages} pesan`;
+        document.getElementById('statSessionsSub').textContent = `${data.sessions.messages} pesan`;
 
         document.getElementById('statUnanswered').textContent = data.unanswered.pending;
-        document.getElementById('statUnansweredSub').textContent =
-            `${data.unanswered.resolved} sudah dijawab`;
+        document.getElementById('statUnansweredSub').textContent = `${data.unanswered.resolved} sudah dijawab`;
 
         document.getElementById('statNotif').textContent = data.notifications.unread;
-        document.getElementById('statNotifSub').textContent =
-            `dari ${data.notifications.total} total`;
+        document.getElementById('statNotifSub').textContent = `dari ${data.notifications.total} total`;
 
         const statFeedback = document.getElementById('statFeedback');
         if (statFeedback && data.feedback) {
@@ -790,12 +808,85 @@ async function loadDashboard() {
                 `${data.analytics.totalRefusals} penolakan`;
         }
 
+        if (data.graph) {
+            const gNodes = document.getElementById('statGraphNodes');
+            const gEdges = document.getElementById('statGraphEdges');
+            if (gNodes) gNodes.textContent = data.graph.nodes || 0;
+            if (gEdges) gEdges.textContent = data.graph.edges || 0;
+            if (document.getElementById('statGraphNodesSub')) {
+                document.getElementById('statGraphNodesSub').textContent =
+                    `${data.knowledge?.chunks || 0} chunk terindeks`;
+            }
+            if (document.getElementById('statGraphEdgesSub')) {
+                document.getElementById('statGraphEdgesSub').textContent =
+                    data.graph.lastSaveAt ? `Tersimpan ${new Date(data.graph.lastSaveAt).toLocaleTimeString('id-ID')}` : 'Belum disimpan';
+            }
+        }
+
         renderChart(data.sessions.daily);
         renderProviderStatus(data.providers.list);
         renderLearningHighlight(data.learning);
+        renderRAGStats(data.rag);
     } catch (err) {
         console.error('Gagal load dashboard:', err);
     }
+}
+
+function renderRAGStats(rag) {
+    const el = document.getElementById('ragStatsPanel');
+    if (!el) return;
+    if (!rag) {
+        el.innerHTML = '<div class="empty-state">RAG stats tidak tersedia</div>';
+        return;
+    }
+
+    el.innerHTML = `
+        <div class="rag-stats-grid">
+            <div class="rag-stat">
+                <div class="rag-stat-value">${rag.bm25Docs || 0}</div>
+                <div class="rag-stat-label">BM25 Docs</div>
+            </div>
+            <div class="rag-stat">
+                <div class="rag-stat-value">${rag.embedding?.indexedChunks || 0}</div>
+                <div class="rag-stat-label">Embedding Vecs</div>
+            </div>
+            <div class="rag-stat">
+                <div class="rag-stat-value">${rag.cache?.size || 0}</div>
+                <div class="rag-stat-label">Cache Size</div>
+            </div>
+            <div class="rag-stat">
+                <div class="rag-stat-value">${rag.cache?.hitRate || '0%'}</div>
+                <div class="rag-stat-label">Cache Hit</div>
+            </div>
+            <div class="rag-stat">
+                <div class="rag-stat-value">${rag.rewrites || 0}</div>
+                <div class="rag-stat-label">Rewrites</div>
+            </div>
+            <div class="rag-stat">
+                <div class="rag-stat-value">${rag.totalQueries || 0}</div>
+                <div class="rag-stat-label">Queries</div>
+            </div>
+        </div>
+        <div style="margin-top:12px;">
+            <button class="btn-secondary" onclick="rebuildRAG()">
+                <i class="fas fa-sync"></i> Rebuild RAG Index
+            </button>
+        </div>
+    `;
+}
+
+async function rebuildRAG() {
+    if (!confirm('Rebuild RAG index? Proses ini akan memanggil API embedding untuk semua chunk.')) return;
+    try {
+        const res = await adminFetch('/api/admin/rag/rebuild', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            alert('✅ RAG index dibangun ulang');
+            loadDashboard();
+        } else {
+            alert('❌ ' + data.message);
+        }
+    } catch (err) { alert('Error: ' + err.message); }
 }
 
 function renderChart(daily) {
@@ -833,12 +924,13 @@ function renderProviderStatus(list) {
         const badge = p.enabled
             ? '<span class="badge badge-success">✓</span>'
             : '<span class="badge badge-secondary">✗</span>';
+        const roles = (p.roles || ['chat']).map(r => `<span class="role-badge ${r}">${r}</span>`).join(' ');
         html += `
             <div class="provider-status-item">
                 <div class="provider-status-name">
                     ${badge} <strong>${p.name}</strong>
                 </div>
-                <div class="provider-status-meta">${p.models} model</div>
+                <div class="provider-status-meta">${roles} · ${p.models} model</div>
             </div>
         `;
     });
@@ -874,12 +966,8 @@ function renderLearningHighlight(learning) {
 function toggleNotifDropdown() {
     const dropdown = document.getElementById('notifDropdown');
     const isOpen = dropdown.classList.contains('show');
-    if (isOpen) {
-        dropdown.classList.remove('show');
-    } else {
-        dropdown.classList.add('show');
-        loadNotificationsDropdown();
-    }
+    if (isOpen) dropdown.classList.remove('show');
+    else { dropdown.classList.add('show'); loadNotificationsDropdown(); }
 }
 
 async function loadNotificationsBadge() {
@@ -890,10 +978,8 @@ async function loadNotificationsBadge() {
         if (data.unread > 0) {
             badge.textContent = data.unread > 99 ? '99+' : data.unread;
             badge.style.display = 'flex';
-        } else {
-            badge.style.display = 'none';
-        }
-    } catch (err) { /* silent */ }
+        } else badge.style.display = 'none';
+    } catch (err) {}
 }
 
 async function loadNotificationsDropdown() {
@@ -907,9 +993,7 @@ async function loadNotificationsDropdown() {
         if (data.unread > 0) {
             badge.textContent = data.unread > 99 ? '99+' : data.unread;
             badge.style.display = 'flex';
-        } else {
-            badge.style.display = 'none';
-        }
+        } else badge.style.display = 'none';
 
         if (!data.items || data.items.length === 0) {
             body.innerHTML = '<div class="notif-empty">Belum ada notifikasi</div>';
@@ -973,9 +1057,9 @@ async function loadAdminConfig() {
         cb('memoryEnabled', cfg.memoryEnabled !== false);
         cb('convEnabled', cfg.conversationHistoryEnabled !== false);
 
-        setVal('memoryMinScore', cfg.memoryMinScore || 60);
-        setVal('memorySaveThreshold', cfg.memorySaveThreshold || 40);
-        setVal('convSize', cfg.conversationHistorySize || 10);
+        setVal('memoryMinScore', cfg.memoryMinScore || 75);
+        setVal('memorySaveThreshold', cfg.memorySaveThreshold || 55);
+        setVal('convSize', cfg.conversationHistorySize || 20);
         setVal('rateLimitPerSession', cfg.rateLimitPerSession || 20);
 
         updateLogoPreview(cfg.logoUrl);
@@ -1007,13 +1091,21 @@ async function loadAdminConfig() {
             badgeLearning.style.display = (cfg.pendingLearning || 0) > 0 ? 'inline-flex' : 'none';
         }
 
+        if (cfg.graph) {
+            const badge = document.getElementById('badgeGraph');
+            if (badge) {
+                badge.textContent = cfg.graph.nodes || 0;
+                badge.style.display = (cfg.graph.nodes || 0) > 0 ? 'inline-flex' : 'none';
+            }
+        }
+
         renderProviders(cfg.providers || []);
         renderKnowledgeFiles(cfg.knowledgeFiles || [], cfg.knowledgeChunks || 0);
     } catch (err) { console.error('Gagal load config:', err); }
 }
 
 // ============================================================
-// PROVIDER MODE SWITCH (BUILT-IN vs CUSTOM)
+// PROVIDER MODE SWITCH
 // ============================================================
 function switchProviderMode(mode) {
     currentProviderMode = mode;
@@ -1027,7 +1119,7 @@ function switchProviderMode(mode) {
 }
 
 // ============================================================
-// PROVIDERS LIST
+// PROVIDERS LIST (dengan Role Badge)
 // ============================================================
 function renderProviders(providers) {
     const el = document.getElementById('providersList');
@@ -1038,7 +1130,7 @@ function renderProviders(providers) {
     }
 
     let html = '<div class="table-wrap"><table class="data-table"><thead><tr>';
-    html += '<th>#</th><th>Provider</th><th>Model</th><th>API Key</th><th>Status</th><th>Aksi</th>';
+    html += '<th>#</th><th>Provider</th><th>Role</th><th>Model</th><th>Status</th><th>Aksi</th>';
     html += '</tr></thead><tbody>';
 
     providers.forEach(p => {
@@ -1050,15 +1142,37 @@ function renderProviders(providers) {
             ? ' <span class="badge badge-warning" style="font-size:9px;">CUSTOM</span>'
             : '';
 
+        const roleBadges = VALID_ROLES.map(role => {
+            const roles = p.roles || ['chat'];
+            const active = roles.includes(role);
+            return `<span class="role-badge ${role} ${active ? '' : 'inactive'}"
+                        onclick="toggleRole(${p.index}, '${role}')"
+                        title="Klik untuk toggle role ${role}">
+                ${role}${active ? ' ✓' : ''}
+            </span>`;
+        }).join('');
+
+        const embModels = (p.embeddingModels || []).length > 0
+            ? `<div style="font-size:10px;color:#666;margin-top:4px;">📐 ${(p.embeddingModels || []).join(', ')}</div>`
+            : '';
+
         html += `<tr>
             <td>${p.index + 1}</td>
             <td><strong>${p.displayName}</strong>${customTag}</td>
-            <td style="font-size:11px"><code>${(p.models || []).join(', ')}</code></td>
-            <td><code>${p.masked}</code></td>
+            <td>
+                <div style="display:flex;flex-wrap:wrap;gap:4px;max-width:280px;">
+                    ${roleBadges}
+                </div>
+            </td>
+            <td style="font-size:11px">
+                <code>${(p.models || []).slice(0, 2).join(', ')}</code>
+                ${embModels}
+            </td>
             <td>${statusBadge}</td>
             <td style="white-space:nowrap">
-                <button class="btn-icon-sm btn-info" onclick="testProvider(${p.index})" title="Test Koneksi"><i class="fas fa-vial"></i></button>
-                <button class="btn-icon-sm btn-primary" onclick="editProviderModels(${p.index}, '${(p.models || []).join(',')}')" title="Edit Model"><i class="fas fa-edit"></i></button>
+                <button class="btn-icon-sm btn-info" onclick="testProvider(${p.index}, 'chat')" title="Test Chat"><i class="fas fa-vial"></i></button>
+                <button class="btn-icon-sm btn-info" onclick="testProvider(${p.index}, 'embedding')" title="Test Embedding"><i class="fas fa-ruler-combined"></i></button>
+                <button class="btn-icon-sm btn-primary" onclick="editProviderModels(${p.index}, '${(p.models || []).join(',')}', '${(p.embeddingModels || []).join(',')}')" title="Edit Model"><i class="fas fa-edit"></i></button>
                 <button class="btn-icon-sm btn-warning" onclick="editProviderKey(${p.index})" title="Edit API Key"><i class="fas fa-key"></i></button>
                 <button class="btn-icon-sm btn-secondary" onclick="toggleProvider(${p.index})" title="On/Off"><i class="fas fa-power-off"></i></button>
                 <button class="btn-icon-sm btn-danger" onclick="removeProvider(${p.index})" title="Hapus"><i class="fas fa-trash"></i></button>
@@ -1070,9 +1184,37 @@ function renderProviders(providers) {
     el.innerHTML = html;
 }
 
+// ============================================================
+// ROLE TOGGLE
+// ============================================================
+async function toggleRole(index, role) {
+    try {
+        const cfgRes = await adminFetch('/api/admin/config');
+        const cfg = await cfgRes.json();
+        const provider = (cfg.providers || []).find(p => p.index === index);
+        if (!provider) return;
+
+        const currentRoles = provider.roles || ['chat'];
+        const roles = new Set(currentRoles);
+
+        if (roles.has(role)) {
+            if (roles.size > 1) roles.delete(role);
+            else { alert('Minimal 1 role harus aktif'); return; }
+        } else roles.add(role);
+
+        const res = await adminFetch('/api/admin/providers/update-roles', {
+            method: 'POST',
+            body: JSON.stringify({ index, roles: [...roles] })
+        });
+        const data = await res.json();
+        if (data.success) {
+            loadAdminConfig();
+        } else alert('❌ ' + data.message);
+    } catch (err) { alert('Error: ' + err.message); }
+}
 
 // ============================================================
-// ADD PROVIDER (Support Built-in & Custom)
+// ADD PROVIDER
 // ============================================================
 async function addProvider() {
     const isCustom = currentProviderMode === 'custom';
@@ -1084,24 +1226,33 @@ async function addProvider() {
         const endpoint = document.getElementById('customProviderEndpoint').value.trim();
         const apiKey = document.getElementById('customProviderKey').value.trim();
         const modelsRaw = document.getElementById('customProviderModels').value.trim();
+        const embModelsRaw = document.getElementById('customProviderEmbeddingModels').value.trim();
+        const roles = getSelectedRoles('customProviderRoles');
 
         if (!name) return alert('Nama provider wajib diisi');
         if (!endpoint) return alert('Custom Endpoint wajib diisi');
         if (!apiKey) return alert('API Key wajib diisi');
 
         const models = modelsRaw ? modelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
-        if (models.length === 0) return alert('Minimal 1 model wajib diisi');
+        const embeddingModels = embModelsRaw ? embModelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
 
-        payload = { name, apiKey, models, customEndpoint: endpoint, displayName };
+        if (models.length === 0 && !roles.includes('embedding')) {
+            return alert('Minimal 1 model chat wajib diisi');
+        }
+
+        payload = { name, apiKey, models, embeddingModels, customEndpoint: endpoint, displayName, roles };
     } else {
         const name = document.getElementById('newProviderName').value;
         const apiKey = document.getElementById('newProviderKey').value.trim();
         const modelsRaw = document.getElementById('newProviderModels').value.trim();
+        const embModelsRaw = document.getElementById('newProviderEmbeddingModels').value.trim();
+        const roles = getSelectedRoles('newProviderRoles');
 
         if (!apiKey) return alert('API key harus diisi');
 
         const models = modelsRaw ? modelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
-        payload = { name, apiKey, models };
+        const embeddingModels = embModelsRaw ? embModelsRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+        payload = { name, apiKey, models, embeddingModels, roles };
     }
 
     const status = document.getElementById('addProviderStatus');
@@ -1115,13 +1266,10 @@ async function addProvider() {
         const data = await res.json();
         if (data.success) {
             status.innerHTML = '<span class="text-success">✅ Ditambahkan. Total: ' + data.total + '</span>';
-            document.getElementById('newProviderKey').value = '';
-            document.getElementById('newProviderModels').value = '';
-            document.getElementById('customProviderName').value = '';
-            document.getElementById('customProviderDisplay').value = '';
-            document.getElementById('customProviderEndpoint').value = '';
-            document.getElementById('customProviderKey').value = '';
-            document.getElementById('customProviderModels').value = '';
+            ['newProviderKey','newProviderModels','newProviderEmbeddingModels',
+             'customProviderName','customProviderDisplay','customProviderEndpoint',
+             'customProviderKey','customProviderModels','customProviderEmbeddingModels']
+                .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
             loadAdminConfig();
         } else {
             status.innerHTML = '<span class="text-danger">' + data.message + '</span>';
@@ -1131,9 +1279,6 @@ async function addProvider() {
     }
 }
 
-// ============================================================
-// EDIT API KEY
-// ============================================================
 async function editProviderKey(index) {
     const input = prompt('Masukkan API key baru untuk provider ini:');
     if (!input || input.trim().length < 5) return alert('API key tidak valid');
@@ -1144,39 +1289,35 @@ async function editProviderKey(index) {
             body: JSON.stringify({ index, apiKey: input.trim() })
         });
         const data = await res.json();
-        if (data.success) {
-            alert('✅ API key diperbarui');
-            loadAdminConfig();
-        } else {
-            alert('❌ ' + data.message);
-        }
+        if (data.success) { alert('✅ API key diperbarui'); loadAdminConfig(); }
+        else alert('❌ ' + data.message);
     } catch (err) { alert(err.message); }
 }
 
-// ============================================================
-// EDIT MODEL PROVIDER
-// ============================================================
-async function editProviderModels(index, currentModels) {
-    const input = prompt('Edit model provider (pisah dengan koma):', currentModels);
+async function editProviderModels(index, currentModels, currentEmbModels) {
+    const input = prompt('Edit model CHAT provider (pisah dengan koma):', currentModels);
     if (input === null) return;
     const models = input.split(',').map(s => s.trim()).filter(Boolean);
-    if (models.length === 0) return alert('Minimal 1 model');
+
+    const inputEmb = prompt('Edit model EMBEDDING provider (pisah dengan koma, kosongkan untuk skip):', currentEmbModels || '');
+    if (inputEmb === null) return;
+    const embeddingModels = inputEmb.split(',').map(s => s.trim()).filter(Boolean);
+
+    if (models.length === 0 && embeddingModels.length === 0) {
+        return alert('Minimal 1 model (chat atau embedding)');
+    }
 
     try {
         const res = await adminFetch('/api/admin/providers/update-models', {
-            method: 'POST', body: JSON.stringify({ index, models })
+            method: 'POST',
+            body: JSON.stringify({ index, models, embeddingModels })
         });
         const data = await res.json();
-        if (data.success) {
-            alert('✅ Model diperbarui');
-            loadAdminConfig();
-        } else alert('❌ ' + data.message);
+        if (data.success) { alert('✅ Model diperbarui'); loadAdminConfig(); }
+        else alert('❌ ' + data.message);
     } catch (err) { alert(err.message); }
 }
 
-// ============================================================
-// REMOVE / TOGGLE / TEST PROVIDER
-// ============================================================
 async function removeProvider(index) {
     if (!confirm('Hapus provider ini?')) return;
     try {
@@ -1194,23 +1335,20 @@ async function toggleProvider(index) {
             method: 'POST', body: JSON.stringify({ index })
         });
         const data = await res.json();
-        if (data.success) {
-            loadAdminConfig();
-            loadNotificationsBadge();
-        } else alert(data.message);
+        if (data.success) { loadAdminConfig(); loadNotificationsBadge(); }
+        else alert(data.message);
     } catch (err) { alert(err.message); }
 }
 
-async function testProvider(index) {
+async function testProvider(index, type = 'chat') {
     try {
         const res = await adminFetch('/api/admin/providers/test', {
-            method: 'POST', body: JSON.stringify({ index })
+            method: 'POST', body: JSON.stringify({ index, type })
         });
         const data = await res.json();
         alert(data.success ? '✅ ' + data.message : '❌ ' + data.message);
     } catch (err) { alert('Error: ' + err.message); }
 }
-
 // ============================================================
 // UNANSWERED QUESTIONS
 // ============================================================
@@ -1250,10 +1388,7 @@ async function loadUnanswered() {
         data.items.forEach(u => {
             const date = new Date(u.lastAsked).toLocaleString('id-ID');
             const isResolved = u.resolved;
-            const countBadge = u.count > 1
-                ? `<span class="badge badge-warning">Ditanya ${u.count}x</span>`
-                : '';
-
+            const countBadge = u.count > 1 ? `<span class="badge badge-warning">Ditanya ${u.count}x</span>` : '';
             const safeQuestion = u.question.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/'/g, "\\'");
 
             html += `
@@ -1268,9 +1403,7 @@ async function loadUnanswered() {
                             ${isResolved ? '<span class="badge badge-success">✓ Sudah</span>' : '<span class="badge badge-danger">Belum</span>'}
                         </div>
                     </div>
-                    <div class="unanswered-meta">
-                        <i class="fas fa-clock"></i> Terakhir ditanya: ${date}
-                    </div>
+                    <div class="unanswered-meta"><i class="fas fa-clock"></i> Terakhir ditanya: ${date}</div>
                     <div class="unanswered-actions">
                         ${!isResolved ? `
                             <button class="btn-primary-lg btn-sm" onclick="openAnswerModal('${u.id}', '${safeQuestion}', 'unanswered')">
@@ -1346,7 +1479,6 @@ async function loadLearningQueue() {
         const data = await res.json();
 
         const stats = data.stats || {};
-
         const setText = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
         setText('learningTotal', stats.total || 0);
         setText('learningPending', stats.pending || 0);
@@ -1375,10 +1507,7 @@ async function loadLearningQueue() {
             const date = new Date(item.lastAsked).toLocaleString('id-ID');
             const priorityClass = `priority-${item.priority}`;
             const priorityLabel = {
-                urgent: '🚨 URGENT',
-                high: '⚠️ TINGGI',
-                medium: '📌 SEDANG',
-                normal: 'ℹ️ NORMAL'
+                urgent: '🚨 URGENT', high: '⚠️ TINGGI', medium: '📌 SEDANG', normal: 'ℹ️ NORMAL'
             }[item.priority] || 'NORMAL';
 
             const variants = (item.variants || []).slice(0, 3).map(v =>
@@ -1386,30 +1515,18 @@ async function loadLearningQueue() {
             ).join('');
 
             const safeQuestion = (item.original || item.question)
-                .replace(/\\/g, '\\\\')
-                .replace(/`/g, '\\`')
-                .replace(/'/g, "\\'");
+                .replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/'/g, "\\'");
 
             html += `
                 <div class="learning-item ${priorityClass} ${item.resolved ? 'learning-resolved' : ''}">
                     <div class="learning-head">
                         <div class="learning-priority">${priorityLabel}</div>
-                        <div class="learning-count">
-                            <i class="fas fa-fire"></i> ${item.count}x ditanya
-                        </div>
+                        <div class="learning-count"><i class="fas fa-fire"></i> ${item.count}x ditanya</div>
                     </div>
-                    <div class="learning-question">
-                        <i class="fas fa-question-circle"></i> ${item.question}
-                    </div>
-                    ${variants ? `
-                        <div class="learning-variants">
-                            <div class="variant-label">Variasi pertanyaan:</div>
-                            ${variants}
-                        </div>
-                    ` : ''}
+                    <div class="learning-question"><i class="fas fa-question-circle"></i> ${item.question}</div>
+                    ${variants ? `<div class="learning-variants"><div class="variant-label">Variasi pertanyaan:</div>${variants}</div>` : ''}
                     <div class="learning-meta">
-                        <i class="fas fa-clock"></i> Pertama: ${new Date(item.firstAsked).toLocaleDateString('id-ID')}
-                        • Terakhir: ${date}
+                        <i class="fas fa-clock"></i> Pertama: ${new Date(item.firstAsked).toLocaleDateString('id-ID')} • Terakhir: ${date}
                     </div>
                     <div class="unanswered-actions">
                         ${!item.resolved ? `
@@ -1419,9 +1536,7 @@ async function loadLearningQueue() {
                             <button class="btn-secondary btn-sm" onclick="resolveLearning('${item.id}')">
                                 <i class="fas fa-check"></i> Tandai Selesai
                             </button>
-                        ` : `
-                            <span class="badge badge-success">✓ Sudah ditangani</span>
-                        `}
+                        ` : `<span class="badge badge-success">✓ Sudah ditangani</span>`}
                         <button class="btn-danger-outline btn-sm" onclick="deleteLearning('${item.id}')">
                             <i class="fas fa-trash"></i> Hapus
                         </button>
@@ -1506,9 +1621,7 @@ async function loadFeedback() {
         setText('anOutOfScope', stats.analytics?.totalOutOfScope || 0);
 
         renderFeedbackChart(stats.dailyStats);
-    } catch (err) {
-        console.error('Gagal load feedback stats:', err);
-    }
+    } catch (err) { console.error('Gagal load feedback stats:', err); }
 
     const el = document.getElementById('feedbackList');
     if (!el) return;
@@ -1536,9 +1649,7 @@ async function loadFeedback() {
             html += `
                 <div class="feedback-item feedback-${f.rating}">
                     <div class="feedback-head">
-                        <div class="feedback-icon">
-                            <i class="fas fa-${icon}"></i>
-                        </div>
+                        <div class="feedback-icon"><i class="fas fa-${icon}"></i></div>
                         <div class="feedback-question">${f.question}</div>
                         <span class="badge ${badgeClass}">${f.rating === 'good' ? '👍 Bagus' : '👎 Kurang'}</span>
                     </div>
@@ -1563,12 +1674,8 @@ async function loadFeedback() {
 function renderFeedbackChart(dailyStats) {
     const el = document.getElementById('feedbackChart');
     if (!el || !dailyStats) return;
-
     const days = Object.keys(dailyStats).sort().slice(-7);
-    if (days.length === 0) {
-        el.innerHTML = '<div class="empty-state">Belum ada data</div>';
-        return;
-    }
+    if (days.length === 0) { el.innerHTML = '<div class="empty-state">Belum ada data</div>'; return; }
 
     const max = Math.max(...days.map(d => dailyStats[d].chats || 0), 1);
     let html = '<div class="chart-bars">';
@@ -1591,10 +1698,7 @@ function renderFeedbackChart(dailyStats) {
         `;
     });
     html += '</div>';
-    html += '<div class="chart-legend">' +
-            '<span class="legend-item"><span class="legend-dot legend-good"></span> Bagus</span>' +
-            '<span class="legend-item"><span class="legend-dot legend-bad"></span> Kurang</span>' +
-            '</div>';
+    html += '<div class="chart-legend"><span class="legend-item"><span class="legend-dot legend-good"></span> Bagus</span><span class="legend-item"><span class="legend-dot legend-bad"></span> Kurang</span></div>';
     el.innerHTML = html;
 }
 
@@ -1615,7 +1719,7 @@ async function clearAnalytics() {
 }
 
 // ============================================================
-// MODAL ANSWER
+// MODAL ANSWER + UNIFIED PIPELINE
 // ============================================================
 function openAnswerModal(id, question, source) {
     document.getElementById('modal-id').value = id;
@@ -1623,6 +1727,9 @@ function openAnswerModal(id, question, source) {
     document.getElementById('modal-answer').value = '';
     document.getElementById('modal-category').value = '';
     document.getElementById('modal-source').value = source;
+    document.getElementById('modalPipelineStatus').innerHTML = '';
+    const btn = document.getElementById('modalSubmitBtn');
+    if (btn) btn.disabled = false;
     document.getElementById('answerModal').classList.add('show');
     setTimeout(() => document.getElementById('modal-answer').focus(), 100);
 }
@@ -1638,30 +1745,71 @@ async function submitAnswerToKnowledge() {
     const answer = document.getElementById('modal-answer').value.trim();
     const category = document.getElementById('modal-category').value.trim();
     const source = document.getElementById('modal-source').value;
+    const statusEl = document.getElementById('modalPipelineStatus');
+    const submitBtn = document.getElementById('modalSubmitBtn');
 
     if (!answer) return alert('Jawaban tidak boleh kosong');
     if (answer.length < 20) return alert('Jawaban minimal 20 karakter');
 
-    const endpoint = source === 'learning'
-        ? '/api/admin/learning/add-to-knowledge'
-        : '/api/admin/unanswered/add-to-knowledge';
+    if (submitBtn) submitBtn.disabled = true;
+
+    if (statusEl) {
+        statusEl.innerHTML = `
+            <div class="pipeline-step pending"><i class="fas fa-spinner fa-spin"></i> Menyimpan ke Buku Pengetahuan...</div>
+            <div class="pipeline-step pending"><i class="fas fa-circle"></i> Update Knowledge Graph...</div>
+            <div class="pipeline-step pending"><i class="fas fa-circle"></i> Tandai resolved (3 fitur)...</div>
+            <div class="pipeline-step pending"><i class="fas fa-circle"></i> Semantic Extraction via AI...</div>
+        `;
+    }
 
     try {
-        const res = await adminFetch(endpoint, {
+        const res = await adminFetch('/api/admin/unified/add-to-knowledge', {
             method: 'POST',
-            body: JSON.stringify({ id, question, answer, category })
+            body: JSON.stringify({ id, question, answer, category, source })
         });
         const data = await res.json();
+
         if (data.success) {
-            alert('✅ ' + data.message);
-            closeAnswerModal();
-            if (source === 'learning') loadLearningQueue();
-            else loadUnanswered();
-            loadAdminConfig();
+            const s = data.steps || {};
+            if (statusEl) {
+                statusEl.innerHTML = `
+                    <div class="pipeline-step ${s.savedToKnowledge ? 'success' : 'failed'}">
+                        <i class="fas fa-${s.savedToKnowledge ? 'check-circle' : 'times-circle'}"></i>
+                        Buku Pengetahuan ${s.savedToKnowledge ? 'terupdate' : 'gagal'}
+                    </div>
+                    <div class="pipeline-step ${s.graphUpdated ? 'success' : 'failed'}">
+                        <i class="fas fa-${s.graphUpdated ? 'check-circle' : 'times-circle'}"></i>
+                        Knowledge Graph ${s.graphUpdated ? `+${s.edgesAdded} edges` : 'gagal'}
+                    </div>
+                    <div class="pipeline-step ${(s.resolvedUnanswered || s.resolvedLearning) ? 'success' : 'pending'}">
+                        <i class="fas fa-${(s.resolvedUnanswered || s.resolvedLearning) ? 'check-circle' : 'circle'}"></i>
+                        Resolved: ${s.resolvedUnanswered ? 'Tak Terjawab ✓ ' : ''}${s.resolvedLearning ? 'Auto-Learning ✓' : ''}
+                    </div>
+                    <div class="pipeline-step ${s.triplesExtracted > 0 ? 'success' : 'pending'}">
+                        <i class="fas fa-${s.triplesExtracted > 0 ? 'check-circle' : 'circle'}"></i>
+                        Semantic: ${s.triplesExtracted || 0} triple diekstrak
+                    </div>
+                `;
+            }
+
+            setTimeout(() => {
+                closeAnswerModal();
+                if (source === 'learning') loadLearningQueue();
+                else loadUnanswered();
+                loadAdminConfig();
+            }, 2000);
         } else {
-            alert('❌ ' + data.message);
+            if (statusEl) {
+                statusEl.innerHTML = `<div class="pipeline-step failed"><i class="fas fa-times-circle"></i> Gagal: ${data.message}</div>`;
+            }
+            if (submitBtn) submitBtn.disabled = false;
         }
-    } catch (err) { alert(err.message); }
+    } catch (err) {
+        if (statusEl) {
+            statusEl.innerHTML = `<div class="pipeline-step failed"><i class="fas fa-times-circle"></i> Error: ${err.message}</div>`;
+        }
+        if (submitBtn) submitBtn.disabled = false;
+    }
 }
 
 // ============================================================
@@ -1670,14 +1818,8 @@ async function submitAnswerToKnowledge() {
 function updateLogoPreview(url) {
     const box = document.getElementById('logoPreviewBox');
     if (!box) return;
-    if (url) {
-        box.innerHTML = `<img src="${url}" alt="Logo">`;
-    } else {
-        box.innerHTML = `<div class="logo-placeholder">
-            <i class="fas fa-image"></i>
-            <span>Belum ada logo</span>
-        </div>`;
-    }
+    if (url) box.innerHTML = `<img src="${url}" alt="Logo">`;
+    else box.innerHTML = `<div class="logo-placeholder"><i class="fas fa-image"></i><span>Belum ada logo</span></div>`;
 }
 
 async function uploadLogo() {
@@ -1702,12 +1844,8 @@ async function uploadLogo() {
             updateLogoPreview(data.logoUrl);
             await loadPublicConfig();
             loadAdminConfig();
-        } else {
-            status.innerHTML = '<span class="text-danger">❌ ' + data.message + '</span>';
-        }
-    } catch (err) {
-        status.innerHTML = '<span class="text-danger">' + err.message + '</span>';
-    }
+        } else status.innerHTML = '<span class="text-danger">❌ ' + data.message + '</span>';
+    } catch (err) { status.innerHTML = '<span class="text-danger">' + err.message + '</span>'; }
     fileInput.value = '';
 }
 
@@ -1722,12 +1860,8 @@ async function deleteLogo() {
             updateLogoPreview('');
             await loadPublicConfig();
             loadAdminConfig();
-        } else {
-            status.innerHTML = '<span class="text-danger">❌ ' + data.message + '</span>';
-        }
-    } catch (err) {
-        status.innerHTML = '<span class="text-danger">' + err.message + '</span>';
-    }
+        } else status.innerHTML = '<span class="text-danger">❌ ' + data.message + '</span>';
+    } catch (err) { status.innerHTML = '<span class="text-danger">' + err.message + '</span>'; }
 }
 
 // ============================================================
@@ -1751,10 +1885,8 @@ async function saveGeneral() {
             method: 'POST', body: JSON.stringify(updates)
         });
         const data = await res.json();
-        if (data.success) {
-            alert('✅ Pengaturan disimpan');
-            await loadPublicConfig();
-        } else alert('❌ ' + data.message);
+        if (data.success) { alert('✅ Pengaturan disimpan'); await loadPublicConfig(); }
+        else alert('❌ ' + data.message);
     } catch (err) { alert(err.message); }
 }
 
@@ -1775,18 +1907,12 @@ async function savePrompt() {
 function renderKnowledgeFiles(files, chunks) {
     const el = document.getElementById('knowledgeFilesList');
     if (!el) return;
-    if (files.length === 0) {
-        el.innerHTML = '<div class="empty-state">Belum ada file pengetahuan</div>';
-        return;
-    }
+    if (files.length === 0) { el.innerHTML = '<div class="empty-state">Belum ada file pengetahuan</div>'; return; }
+
     let html = `<p class="text-muted small">Total ${chunks} chunk aktif</p>`;
     html += '<div class="table-wrap"><table class="data-table"><thead><tr><th>Nama</th><th>Ukuran</th><th>Aksi</th></tr></thead><tbody>';
     files.forEach(f => {
-        html += `<tr>
-            <td>${f.name}</td>
-            <td>${(f.size / 1024).toFixed(1)} KB</td>
-            <td><button class="btn-icon-sm btn-danger" onclick="deleteKnowledge('${f.name}')"><i class="fas fa-trash"></i></button></td>
-        </tr>`;
+        html += `<tr><td>${f.name}</td><td>${(f.size / 1024).toFixed(1)} KB</td><td><button class="btn-icon-sm btn-danger" onclick="deleteKnowledge('${f.name}')"><i class="fas fa-trash"></i></button></td></tr>`;
     });
     html += '</tbody></table></div>';
     el.innerHTML = html;
@@ -1811,12 +1937,8 @@ async function uploadKnowledge() {
             status.innerHTML = '<span class="text-success">✅ ' + data.message + '</span>';
             fileInput.value = '';
             loadAdminConfig();
-        } else {
-            status.innerHTML = '<span class="text-danger">❌ ' + data.message + '</span>';
-        }
-    } catch (err) {
-        status.innerHTML = '<span class="text-danger">' + err.message + '</span>';
-    }
+        } else status.innerHTML = '<span class="text-danger">❌ ' + data.message + '</span>';
+    } catch (err) { status.innerHTML = '<span class="text-danger">' + err.message + '</span>'; }
 }
 
 async function deleteKnowledge(name) {
@@ -1849,10 +1971,8 @@ async function loadMemoryList() {
     try {
         const res = await adminFetch('/api/admin/memory');
         const data = await res.json();
-        if (!data.items || data.items.length === 0) {
-            el.innerHTML = '<div class="empty-state">Belum ada memori.</div>';
-            return;
-        }
+        if (!data.items || data.items.length === 0) { el.innerHTML = '<div class="empty-state">Belum ada memori.</div>'; return; }
+
         let html = '';
         data.items.forEach((m, i) => {
             const date = new Date(m.timestamp).toLocaleString('id-ID');
@@ -1861,9 +1981,7 @@ async function loadMemoryList() {
                     <div class="memory-head">
                         <span class="memory-date"><i class="fas fa-clock"></i> ${date}</span>
                         <span class="badge badge-primary">Hit: ${m.hit}</span>
-                        <button class="btn-icon-sm btn-danger" onclick="deleteMemory(${i})">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                        <button class="btn-icon-sm btn-danger" onclick="deleteMemory(${i})"><i class="fas fa-trash"></i></button>
                     </div>
                     <div class="memory-question"><i class="fas fa-question-circle"></i> ${m.question}</div>
                     <div class="memory-answer">${m.answer}</div>
@@ -1912,8 +2030,8 @@ async function reloadMemory() {
 async function saveMemorySettings() {
     const updates = {
         memoryEnabled: document.getElementById('memoryEnabled').checked,
-        memoryMinScore: parseInt(document.getElementById('memoryMinScore').value) || 60,
-        memorySaveThreshold: parseInt(document.getElementById('memorySaveThreshold').value) || 40
+        memoryMinScore: parseInt(document.getElementById('memoryMinScore').value) || 75,
+        memorySaveThreshold: parseInt(document.getElementById('memorySaveThreshold').value) || 55
     };
     try {
         const res = await adminFetch('/api/admin/config', {
@@ -1927,7 +2045,7 @@ async function saveMemorySettings() {
 async function saveConversationSettings() {
     const updates = {
         conversationHistoryEnabled: document.getElementById('convEnabled').checked,
-        conversationHistorySize: parseInt(document.getElementById('convSize').value) || 10,
+        conversationHistorySize: parseInt(document.getElementById('convSize').value) || 20,
         rateLimitPerSession: parseInt(document.getElementById('rateLimitPerSession').value) || 20
     };
     try {
@@ -1949,20 +2067,13 @@ async function loadSessions() {
     try {
         const res = await adminFetch('/api/admin/sessions');
         const data = await res.json();
-        if (!data.sessions || data.sessions.length === 0) {
-            el.innerHTML = '<div class="empty-state">Tidak ada sesi aktif.</div>';
-            return;
-        }
+        if (!data.sessions || data.sessions.length === 0) { el.innerHTML = '<div class="empty-state">Tidak ada sesi aktif.</div>'; return; }
+
         let html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Mulai</th><th>Aktif Terakhir</th><th>Pesan</th><th>Pesan Terakhir</th></tr></thead><tbody>';
         data.sessions.forEach(s => {
             const c = new Date(s.createdAt).toLocaleString('id-ID');
             const l = new Date(s.lastActivity).toLocaleString('id-ID');
-            html += `<tr>
-                <td>${c}</td>
-                <td>${l}</td>
-                <td>${s.messageCount}</td>
-                <td style="font-size:12px">${s.lastMessage || '-'}</td>
-            </tr>`;
+            html += `<tr><td>${c}</td><td>${l}</td><td>${s.messageCount}</td><td style="font-size:12px">${s.lastMessage || '-'}</td></tr>`;
         });
         html += '</tbody></table></div>';
         el.innerHTML = html;
@@ -1991,18 +2102,14 @@ async function loadNotifications() {
     try {
         const res = await adminFetch('/api/admin/notifications');
         const data = await res.json();
-
         await loadNotificationsBadge();
 
-        if (!data.items || data.items.length === 0) {
-            el.innerHTML = '<div class="empty-state">Tidak ada notifikasi.</div>';
-            return;
-        }
+        if (!data.items || data.items.length === 0) { el.innerHTML = '<div class="empty-state">Tidak ada notifikasi.</div>'; return; }
+
         let html = '';
         data.items.forEach(n => {
             const date = new Date(n.timestamp).toLocaleString('id-ID');
-            const icon = n.level === 'danger' ? 'exclamation-triangle' :
-                         (n.level === 'warning' ? 'exclamation-circle' : 'info-circle');
+            const icon = n.level === 'danger' ? 'exclamation-triangle' : (n.level === 'warning' ? 'exclamation-circle' : 'info-circle');
             html += `
                 <div class="notif-item notif-${n.level} ${n.read ? 'notif-read' : ''}">
                     <div class="notif-head">
@@ -2049,10 +2156,8 @@ async function runBackupNow() {
     try {
         const res = await adminFetch('/api/admin/backup', { method: 'POST' });
         const data = await res.json();
-        if (data.success) {
-            alert('✅ ' + data.message);
-            if (el) loadBackups();
-        } else alert('❌ ' + data.message);
+        if (data.success) { alert('✅ ' + data.message); if (el) loadBackups(); }
+        else alert('❌ ' + data.message);
     } catch (err) { alert(err.message); }
 }
 
@@ -2063,10 +2168,8 @@ async function loadBackups() {
     try {
         const res = await adminFetch('/api/admin/backups');
         const data = await res.json();
-        if (!data.items || data.items.length === 0) {
-            el.innerHTML = '<div class="empty-state">Belum ada backup.</div>';
-            return;
-        }
+        if (!data.items || data.items.length === 0) { el.innerHTML = '<div class="empty-state">Belum ada backup.</div>'; return; }
+
         let html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>Nama File</th><th>Tanggal</th><th>Ukuran</th></tr></thead><tbody>';
         data.items.forEach(b => {
             const d = new Date(b.created).toLocaleString('id-ID');
@@ -2087,14 +2190,10 @@ async function changePassword() {
     const oldPassword = document.getElementById('oldPassword').value;
     const newPassword = document.getElementById('newPassword').value;
     const status = document.getElementById('passwordStatus');
-    if (!oldPassword || !newPassword) {
-        status.innerHTML = '<span class="text-danger">Isi semua field</span>';
-        return;
-    }
-    if (newPassword.length < 8) {
-        status.innerHTML = '<span class="text-danger">Password minimal 8 karakter</span>';
-        return;
-    }
+
+    if (!oldPassword || !newPassword) { status.innerHTML = '<span class="text-danger">Isi semua field</span>'; return; }
+    if (newPassword.length < 8) { status.innerHTML = '<span class="text-danger">Password minimal 8 karakter</span>'; return; }
+
     try {
         const res = await adminFetch('/api/admin/change-password', {
             method: 'POST', body: JSON.stringify({ oldPassword, newPassword })
@@ -2104,12 +2203,8 @@ async function changePassword() {
             status.innerHTML = '<span class="text-success">✅ ' + data.message + '</span>';
             document.getElementById('oldPassword').value = '';
             document.getElementById('newPassword').value = '';
-        } else {
-            status.innerHTML = '<span class="text-danger">❌ ' + data.message + '</span>';
-        }
-    } catch (err) {
-        status.innerHTML = '<span class="text-danger">' + err.message + '</span>';
-    }
+        } else status.innerHTML = '<span class="text-danger">❌ ' + data.message + '</span>';
+    } catch (err) { status.innerHTML = '<span class="text-danger">' + err.message + '</span>'; }
 }
 
 // ============================================================
@@ -2121,3 +2216,188 @@ document.addEventListener('keydown', function (e) {
         document.getElementById('answerModal')?.classList.remove('show');
     }
 });
+
+// ============================================================
+// KNOWLEDGE GRAPH VISUALIZATION
+// ============================================================
+async function loadGraphVisualization() {
+    const container = document.getElementById('graphContainer');
+    const statsEl = document.getElementById('graphStats');
+    if (!container) return;
+
+    const limit = parseInt(document.getElementById('graphLimit')?.value) || 300;
+    const minDegree = parseInt(document.getElementById('graphMinDegree')?.value) || 1;
+
+    container.classList.add('loading');
+    container.innerHTML = '';
+    if (statsEl) statsEl.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i> Memuat graph...</div>';
+
+    try {
+        const res = await adminFetch(`/api/admin/graph/visualize?limit=${limit}&minDegree=${minDegree}`);
+        const data = await res.json();
+        container.classList.remove('loading');
+
+        if (!data.nodes || data.nodes.length === 0) {
+            container.innerHTML = '<div class="empty-state">Graph kosong. Upload pengetahuan dulu atau rebuild graph.</div>';
+            if (statsEl) statsEl.innerHTML = '';
+            return;
+        }
+
+        if (statsEl) {
+            statsEl.innerHTML = `
+                <div class="graph-stat-item"><i class="fas fa-circle" style="color:var(--primary)"></i> Node ditampilkan: <strong>${data.stats.shown}</strong></div>
+                <div class="graph-stat-item"><i class="fas fa-link" style="color:var(--success)"></i> Edge: <strong>${data.edges.length}</strong></div>
+                <div class="graph-stat-item"><i class="fas fa-database" style="color:var(--warning)"></i> Total node: <strong>${data.stats.totalNodes}</strong></div>
+                <div class="graph-stat-item"><i class="fas fa-fire" style="color:var(--danger)"></i> Max degree: <strong>${data.stats.maxDegree}</strong></div>
+            `;
+        }
+
+        graphNodesDataset = new vis.DataSet(data.nodes);
+        graphEdgesDataset = new vis.DataSet(data.edges);
+
+        const options = {
+            nodes: { shape: 'dot', scaling: { min: 10, max: 40 }, font: { size: 12, face: 'Arial', color: '#202124' } },
+            edges: { color: { color: 'rgba(100,100,100,0.4)', highlight: '#dc3545' }, smooth: { type: 'continuous', roundness: 0.5 }, selectionWidth: 2 },
+            physics: { enabled: true, stabilization: { enabled: true, iterations: 200, updateInterval: 25 }, barnesHut: { gravitationalConstant: -8000, centralGravity: 0.3, springLength: 120, springConstant: 0.04, damping: 0.09 } },
+            interaction: { hover: true, tooltipDelay: 150, navigationButtons: true, keyboard: true },
+            layout: { improvedLayout: true }
+        };
+
+        if (graphNetwork) graphNetwork.destroy();
+        graphNetwork = new vis.Network(container, { nodes: graphNodesDataset, edges: graphEdgesDataset }, options);
+
+        graphNetwork.on('click', (params) => {
+            if (params.nodes && params.nodes.length > 0) showGraphNodeDetail(params.nodes[0]);
+        });
+
+        const searchEl = document.getElementById('graphSearch');
+        if (searchEl && !searchEl._bound) {
+            searchEl._bound = true;
+            searchEl.addEventListener('input', (e) => {
+                const q = e.target.value.toLowerCase().trim();
+                if (!q || !graphNodesDataset) return;
+                const match = graphNodesDataset.get({
+                    filter: n => n.label.toLowerCase().includes(q) || n.id.toLowerCase().includes(q)
+                });
+                if (match.length > 0) {
+                    graphNetwork.selectNodes([match[0].id]);
+                    graphNetwork.focus(match[0].id, { scale: 1.2, animation: true });
+                }
+            });
+        }
+    } catch (err) {
+        container.classList.remove('loading');
+        container.innerHTML = `<div class="empty-state text-danger">Gagal load graph: ${err.message}</div>`;
+        if (statsEl) statsEl.innerHTML = '';
+    }
+}
+
+async function showGraphNodeDetail(nodeId) {
+    const detailEl = document.getElementById('graphNodeDetail');
+    const nameEl = document.getElementById('graphNodeName');
+    const bodyEl = document.getElementById('graphNodeBody');
+    if (!detailEl || !bodyEl) return;
+
+    detailEl.style.display = 'block';
+    nameEl.textContent = nodeId;
+    bodyEl.innerHTML = '<div class="empty-state"><i class="fas fa-spinner fa-spin"></i> Memuat detail...</div>';
+
+    try {
+        const res = await adminFetch(`/api/admin/graph/node/${encodeURIComponent(nodeId)}`);
+        const data = await res.json();
+
+        if (!data.found) { bodyEl.innerHTML = '<div class="empty-state">Node tidak ditemukan.</div>'; return; }
+
+        const n = data.node;
+        let html = `
+            <div class="graph-node-meta">
+                <div class="graph-node-meta-item"><i class="fas fa-project-diagram"></i> Degree: <strong>${n.degree}</strong></div>
+                <div class="graph-node-meta-item"><i class="fas fa-file-alt"></i> Sumber: <strong>${n.sources.length}</strong></div>
+                <div class="graph-node-meta-item"><i class="fas fa-clock"></i> Dibuat: <strong>${new Date(n.createdAt).toLocaleDateString('id-ID')}</strong></div>
+            </div>
+        `;
+
+        if (n.sources && n.sources.length > 0) {
+            html += `<div style="margin-bottom:12px;"><b>File sumber:</b><br><small>${n.sources.map(s => `• ${s}`).join('<br>')}</small></div>`;
+        }
+
+        html += `<div style="margin-bottom:8px;"><b>Tetangga (${data.neighbors.length}):</b></div>`;
+
+        if (data.neighbors.length === 0) html += '<div class="empty-state">Tidak ada tetangga.</div>';
+        else {
+            html += '<div class="graph-neighbors-list">';
+            data.neighbors.forEach(nb => {
+                html += `<span class="graph-neighbor-chip" onclick="showGraphNodeDetail('${nb.id.replace(/'/g, "\\'")}')">${nb.label} <span class="weight-badge">${nb.weight}</span></span>`;
+            });
+            html += '</div>';
+        }
+
+        bodyEl.innerHTML = html;
+    } catch (err) {
+        bodyEl.innerHTML = `<div class="empty-state text-danger">Gagal load detail: ${err.message}</div>`;
+    }
+}
+
+function closeGraphNodeDetail() {
+    const el = document.getElementById('graphNodeDetail');
+    if (el) el.style.display = 'none';
+}
+
+// ============================================================
+// GRAPH ENRICH
+// ============================================================
+async function startEnrich() {
+    const btn = document.getElementById('enrichBtn');
+    const statusEl = document.getElementById('enrichStatus');
+    const maxChunks = parseInt(document.getElementById('enrichMaxChunks')?.value) || 30;
+
+    if (!confirm(`Mulai enrich ${maxChunks} chunk? Ini akan memakai token API provider Anda.`)) return;
+
+    if (btn) btn.disabled = true;
+    if (statusEl) statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memulai enrich...';
+
+    try {
+        const res = await adminFetch('/api/admin/graph/enrich', {
+            method: 'POST',
+            body: JSON.stringify({ maxChunks, concurrency: 2 })
+        });
+        const data = await res.json();
+
+        if (!data.success) {
+            if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${data.message}</span>`;
+            if (btn) btn.disabled = false;
+            return;
+        }
+
+        if (enrichPollTimer) clearInterval(enrichPollTimer);
+        enrichPollTimer = setInterval(pollEnrichStatus, 2000);
+        pollEnrichStatus();
+    } catch (err) {
+        if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">❌ ${err.message}</span>`;
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function pollEnrichStatus() {
+    const statusEl = document.getElementById('enrichStatus');
+    const btn = document.getElementById('enrichBtn');
+
+    try {
+        const res = await adminFetch('/api/admin/graph/enrich/status');
+        const data = await res.json();
+
+        if (!data.inProgress) {
+            if (enrichPollTimer) { clearInterval(enrichPollTimer); enrichPollTimer = null; }
+            if (statusEl) statusEl.innerHTML = `<span style="color:var(--success)">✅ Enrich selesai! Klik "Refresh" di atas untuk lihat hasil.</span>`;
+            if (btn) btn.disabled = false;
+            return;
+        }
+
+        const { done, total } = data.progress;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+        if (statusEl) {
+            statusEl.innerHTML = `<div><i class="fas fa-spinner fa-spin"></i> Memproses... ${done}/${total} chunk (${pct}%)</div><div class="enrich-progress-bar"><div class="enrich-progress-fill" style="width:${pct}%"></div></div>`;
+        }
+    } catch (err) {}
+}

@@ -1,10 +1,10 @@
 {
-  "totalChats": 184,
-  "totalAnswers": 20,
-  "totalRefusals": 13,
-  "totalMemoryHits": 88,
-  "totalRagHits": 62,
-  "totalOutOfScope": 1,
+  "totalChats": 279,
+  "totalAnswers": 38,
+  "totalRefusals": 16,
+  "totalMemoryHits": 114,
+  "totalRagHits": 108,
+  "totalOutOfScope": 3,
   "dailyStats": {
     "2026-09-13": {
       "chats": 37,
@@ -37,8 +37,28 @@
       "bad": 0
     },
     "2026-09-21": {
-      "chats": 4,
+      "chats": 44,
+      "good": 3,
+      "bad": 0
+    },
+    "2026-09-22": {
+      "chats": 28,
+      "good": 15,
+      "bad": 1
+    },
+    "2026-09-23": {
+      "chats": 3,
       "good": 0,
+      "bad": 0
+    },
+    "2026-09-25": {
+      "chats": 4,
+      "good": 1,
+      "bad": 0
+    },
+    "2026-09-29": {
+      "chats": 20,
+      "good": 14,
       "bad": 0
     }
   }

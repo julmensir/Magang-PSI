@@ -725,3 +725,23 @@ Pastikan data di JSS sudah lengkap dan benar.
 Jika butuh bantuan, hubungi petugas via WA 0812-3456-7890.
 
 Kategori : Untuk membuat Akte Nikah (NIKA)
+
+
+## apakah di kementrian ini untuk mesin cetak KTP nya ada di kantor?
+
+Kata kunci : apakah di kementrian ini untuk mesin cetak KTP nya ada di kantor?
+
+Pertanyaan : apakah di kementrian ini untuk mesin cetak KTP nya ada di kantor?
+
+Jawaban : Tidak ada dan di sarkan lasung mengurus di Balekota Yogyakarta
+
+
+
+## siapa presiden indonesia sekarang?
+
+Kata kunci : siapa presiden indonesia sekarang?
+
+Pertanyaan : siapa presiden indonesia sekarang?
+
+Jawaban : Persiden Indonesia Saat ini Adalah Parbowo dan di lantik dari 2024 sampe 2029
+

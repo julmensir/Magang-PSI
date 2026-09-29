@@ -12,9 +12,6 @@
 </head>
 <body>
 
-<!-- ============================================================
-     CHAT PAGE
-     ============================================================ -->
 <div id="chatPage">
   <div class="chat-header">
     <div class="logo-icon" id="logoIcon">S</div>
@@ -37,9 +34,6 @@
   </form>
 </div>
 
-<!-- ============================================================
-     LOGIN PAGE
-     ============================================================ -->
 <div id="loginPage">
   <div class="login-card">
     <div class="login-logo">
@@ -67,13 +61,9 @@
   </div>
 </div>
 
-<!-- ============================================================
-     ADMIN PAGE
-     ============================================================ -->
 <div id="adminPage">
   <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
 
-  <!-- SIDEBAR -->
   <aside class="admin-sidebar" id="adminSidebar">
     <div class="sidebar-brand">
       <div class="brand-logo" id="sidebarLogo">S</div>
@@ -111,6 +101,10 @@
       <a class="nav-item" data-page="knowledge">
         <i class="fas fa-book"></i><span>Pengetahuan</span>
         <span class="nav-badge" id="badgeKnowledge">0</span>
+      </a>
+      <a class="nav-item" data-page="graph">
+        <i class="fas fa-project-diagram"></i><span>Knowledge Graph</span>
+        <span class="nav-badge" id="badgeGraph">0</span>
       </a>
       <a class="nav-item" data-page="unanswered">
         <i class="fas fa-question-circle"></i><span>Tak Terjawab</span>
@@ -152,7 +146,6 @@
     </div>
   </aside>
 
-  <!-- MAIN -->
   <main class="admin-main">
     <header class="main-header">
       <button class="btn-toggle-sidebar" onclick="toggleSidebar()">
@@ -167,7 +160,6 @@
           <i class="fas fa-comments"></i>
         </button>
 
-        <!-- NOTIFIKASI DROPDOWN -->
         <div class="notif-wrapper">
           <button class="btn-icon notif-bell" onclick="toggleNotifDropdown()" title="Notifikasi">
             <i class="fas fa-bell"></i>
@@ -200,9 +192,7 @@
 
     <div class="main-content">
 
-      <!-- ============================================================
-           PAGE: DASHBOARD
-           ============================================================ -->
+      <!-- DASHBOARD -->
       <div class="page active" id="page-dashboard">
         <div class="dash-welcome">
           <div class="dash-welcome-text">
@@ -290,6 +280,38 @@
           </div>
         </div>
 
+        <div class="stat-grid">
+          <div class="stat-card stat-blue">
+            <div class="stat-icon"><i class="fas fa-project-diagram"></i></div>
+            <div class="stat-info">
+              <div class="stat-value" id="statGraphNodes">0</div>
+              <div class="stat-label">Graph Nodes</div>
+              <div class="stat-sub" id="statGraphNodesSub">-</div>
+            </div>
+          </div>
+
+          <div class="stat-card stat-green">
+            <div class="stat-icon"><i class="fas fa-link"></i></div>
+            <div class="stat-info">
+              <div class="stat-value" id="statGraphEdges">0</div>
+              <div class="stat-label">Graph Edges</div>
+              <div class="stat-sub" id="statGraphEdgesSub">-</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RAG HYBRID STATS -->
+        <div class="card">
+          <div class="card-header">
+            <i class="fas fa-search-plus"></i><span>RAG Hybrid Stats</span>
+          </div>
+          <div class="card-body">
+            <div id="ragStatsPanel">
+              <div class="empty-state">Memuat...</div>
+            </div>
+          </div>
+        </div>
+
         <div class="dash-row">
           <div class="card">
             <div class="card-header">
@@ -335,6 +357,9 @@
               <button class="quick-action-btn" onclick="showPage('knowledge')">
                 <i class="fas fa-upload"></i><span>Upload Pengetahuan</span>
               </button>
+              <button class="quick-action-btn" onclick="showPage('graph')">
+                <i class="fas fa-project-diagram"></i><span>Lihat Graph</span>
+              </button>
               <button class="quick-action-btn" onclick="showPage('unanswered')">
                 <i class="fas fa-question-circle"></i><span>Pertanyaan Tak Terjawab</span>
               </button>
@@ -350,17 +375,12 @@
               <button class="quick-action-btn" onclick="runBackupNow()">
                 <i class="fas fa-download"></i><span>Backup Sekarang</span>
               </button>
-              <button class="quick-action-btn" onclick="showChat()">
-                <i class="fas fa-comment-dots"></i><span>Buka Chat</span>
-              </button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: GENERAL
-           ============================================================ -->
+      <!-- GENERAL -->
       <div class="page" id="page-general">
         <div class="card">
           <div class="card-header"><i class="fas fa-tag"></i><span>Identitas AI</span></div>
@@ -417,9 +437,7 @@
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: LOGO
-           ============================================================ -->
+      <!-- LOGO -->
       <div class="page" id="page-logo">
         <div class="card">
           <div class="card-header"><i class="fas fa-image"></i><span>Logo Aplikasi</span></div>
@@ -473,9 +491,7 @@
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: THEME
-           ============================================================ -->
+      <!-- THEME -->
       <div class="page" id="page-theme">
         <div class="card">
           <div class="card-header"><i class="fas fa-palette"></i><span>Warna Tema Aplikasi</span></div>
@@ -548,10 +564,34 @@
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: PROVIDERS (BUILT-IN + CUSTOM)
-           ============================================================ -->
+      <!-- PROVIDERS -->
       <div class="page" id="page-providers">
+        <div class="card">
+          <div class="card-header">
+            <i class="fas fa-info-circle"></i>
+            <span>Panduan Provider Role</span>
+          </div>
+          <div class="card-body">
+            <p class="text-muted small">
+              Setiap provider bisa punya <b>role</b> berbeda. Klik badge role di tabel provider untuk toggle.
+            </p>
+            <ul class="info-list">
+              <li><span class="role-badge chat">chat</span> Provider untuk menjawab pertanyaan user (LLM utama)</li>
+              <li><span class="role-badge embedding">embedding</span> Provider untuk RAG semantic (ubah teks jadi vector)</li>
+              <li><span class="role-badge enrichment">enrichment</span> Provider untuk ekstrak triple ke Knowledge Graph</li>
+              <li><span class="role-badge query-rewriter">query-rewriter</span> Provider untuk rewrite pertanyaan user</li>
+            </ul>
+            <div class="provider-help" style="margin-top:12px;">
+              <strong>Saran kombinasi:</strong>
+              <ul>
+                <li><b>Gemini</b>: chat + embedding + enrichment (paling fleksibel)</li>
+                <li><b>Groq</b>: chat + query-rewriter (tercepat)</li>
+                <li><b>Mistral</b>: chat + enrichment (fallback)</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-header">
             <i class="fas fa-plus"></i>
@@ -563,7 +603,6 @@
               <b>Custom Endpoint</b> jika ingin pakai provider OpenAI-compatible lainnya.
             </p>
 
-            <!-- TAB PILIHAN -->
             <div class="filter-tabs" style="margin-bottom:20px;">
               <button class="filter-tab active" data-mode="builtin" onclick="switchProviderMode('builtin')">
                 <i class="fas fa-list"></i> Provider Terdaftar
@@ -573,7 +612,6 @@
               </button>
             </div>
 
-            <!-- MODE: BUILT-IN -->
             <div id="providerMode-builtin">
               <div class="provider-help">
                 <strong>Cara dapat API key gratis:</strong>
@@ -611,13 +649,39 @@
                 </div>
 
                 <div class="form-group full">
+                  <label>Role <small>(bisa pilih lebih dari 1)</small></label>
+                  <div class="role-checkbox-row" id="newProviderRoles">
+                    <label class="role-checkbox">
+                      <input type="checkbox" value="chat" checked>
+                      <span class="role-badge chat">chat</span>
+                    </label>
+                    <label class="role-checkbox">
+                      <input type="checkbox" value="embedding">
+                      <span class="role-badge embedding">embedding</span>
+                    </label>
+                    <label class="role-checkbox">
+                      <input type="checkbox" value="enrichment">
+                      <span class="role-badge enrichment">enrichment</span>
+                    </label>
+                    <label class="role-checkbox">
+                      <input type="checkbox" value="query-rewriter">
+                      <span class="role-badge query-rewriter">query-rewriter</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="form-group full">
                   <label>Models <small>(pisah koma, kosongkan untuk default)</small></label>
                   <input type="text" id="newProviderModels" placeholder="contoh: llama-3.3-70b-versatile,llama-3.1-8b-instant">
+                </div>
+
+                <div class="form-group full">
+                  <label>Embedding Models <small>(opsional, pisah koma)</small></label>
+                  <input type="text" id="newProviderEmbeddingModels" placeholder="contoh: text-embedding-004">
                 </div>
               </div>
             </div>
 
-            <!-- MODE: CUSTOM -->
             <div id="providerMode-custom" style="display:none;">
               <div class="provider-help">
                 <strong>Provider Custom OpenAI-Compatible:</strong>
@@ -647,8 +711,35 @@
                 </div>
 
                 <div class="form-group full">
+                  <label>Role</label>
+                  <div class="role-checkbox-row" id="customProviderRoles">
+                    <label class="role-checkbox">
+                      <input type="checkbox" value="chat" checked>
+                      <span class="role-badge chat">chat</span>
+                    </label>
+                    <label class="role-checkbox">
+                      <input type="checkbox" value="embedding">
+                      <span class="role-badge embedding">embedding</span>
+                    </label>
+                    <label class="role-checkbox">
+                      <input type="checkbox" value="enrichment">
+                      <span class="role-badge enrichment">enrichment</span>
+                    </label>
+                    <label class="role-checkbox">
+                      <input type="checkbox" value="query-rewriter">
+                      <span class="role-badge query-rewriter">query-rewriter</span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="form-group full">
                   <label>Models <small>(pisah koma)</small></label>
                   <input type="text" id="customProviderModels" placeholder="contoh: gpt-4,gpt-3.5-turbo">
+                </div>
+
+                <div class="form-group full">
+                  <label>Embedding Models <small>(opsional, pisah koma)</small></label>
+                  <input type="text" id="customProviderEmbeddingModels" placeholder="contoh: text-embedding-3-small">
                 </div>
               </div>
             </div>
@@ -671,9 +762,7 @@
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: PROMPT
-           ============================================================ -->
+      <!-- PROMPT -->
       <div class="page" id="page-prompt">
         <div class="card">
           <div class="card-header"><i class="fas fa-comment-dots"></i><span>System Instruction</span></div>
@@ -687,9 +776,7 @@
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: KNOWLEDGE
-           ============================================================ -->
+      <!-- KNOWLEDGE -->
       <div class="page" id="page-knowledge">
         <div class="card">
           <div class="card-header"><i class="fas fa-upload"></i><span>Upload File Pengetahuan</span></div>
@@ -714,9 +801,83 @@
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: UNANSWERED
-           ============================================================ -->
+      <!-- KNOWLEDGE GRAPH -->
+      <div class="page" id="page-graph">
+        <div class="card">
+          <div class="card-header">
+            <i class="fas fa-project-diagram"></i>
+            <span>Knowledge Graph Visualization</span>
+          </div>
+          <div class="card-body">
+
+            <div class="enrich-panel">
+              <div class="enrich-info">
+                <i class="fas fa-magic"></i>
+                <div>
+                  <strong>Semantic Enrichment (Beta)</strong>
+                  <p>Gunakan AI untuk mengekstrak relasi mendalam (triple) dari pengetahuan Anda. Proses ini memakan token API dan berjalan di background.</p>
+                </div>
+              </div>
+              <div class="enrich-actions">
+                <input type="number" id="enrichMaxChunks" value="30" min="5" max="200" step="5" title="Jumlah chunk yang diproses">
+                <button class="btn-primary-lg" id="enrichBtn" onclick="startEnrich()">
+                  <i class="fas fa-magic"></i> Mulai Enrich
+                </button>
+              </div>
+              <div id="enrichStatus" class="enrich-status"></div>
+            </div>
+
+            <div class="graph-controls">
+              <div class="graph-control-item">
+                <label>Jumlah Node (Top N)</label>
+                <input type="number" id="graphLimit" value="300" min="20" max="2000" step="20">
+              </div>
+              <div class="graph-control-item">
+                <label>Minimal Degree</label>
+                <input type="number" id="graphMinDegree" value="1" min="1" max="20">
+              </div>
+              <div class="graph-control-item">
+                <label>Cari Node</label>
+                <input type="text" id="graphSearch" placeholder="Ketik nama node...">
+              </div>
+              <div class="graph-control-item">
+                <button class="btn-primary-lg" onclick="loadGraphVisualization()">
+                  <i class="fas fa-sync"></i> Refresh
+                </button>
+              </div>
+            </div>
+
+            <div class="graph-stats" id="graphStats">
+              <div class="empty-state">Memuat graph...</div>
+            </div>
+
+            <div class="graph-container" id="graphContainer"></div>
+
+            <div class="graph-legend">
+              <div class="legend-title">Keterangan:</div>
+              <div class="legend-items">
+                <span class="legend-item"><span class="legend-dot" style="background:#1e64c8"></span> Node biasa</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#dc3545"></span> Node penting (degree tinggi)</span>
+                <span class="legend-item"><i class="fas fa-circle" style="color:#0d47a1;font-size:8px"></i> Ukuran = Degree</span>
+                <span class="legend-item"><i class="fas fa-minus" style="color:#666"></i> Ketebalan = Bobot</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" id="graphNodeDetail" style="display:none;">
+          <div class="card-header">
+            <i class="fas fa-info-circle"></i>
+            <span>Detail Node: <span id="graphNodeName"></span></span>
+            <button onclick="closeGraphNodeDetail()" style="margin-left:auto;background:transparent;border:none;color:#666;cursor:pointer;font-size:16px;">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          <div class="card-body" id="graphNodeBody"></div>
+        </div>
+      </div>
+
+      <!-- UNANSWERED -->
       <div class="page" id="page-unanswered">
         <div class="card">
           <div class="card-header">
@@ -725,8 +886,8 @@
           </div>
           <div class="card-body">
             <p class="text-muted">
-              Daftar pertanyaan warga yang tidak bisa dijawab AI karena tidak ada di buku pengetahuan.
-              Tambahkan jawabannya supaya AI bisa menjawab ke depannya.
+              <b>Fitur Terpadu:</b> Saat Anda jawab di sini, otomatis juga akan:
+              ✅ Masuk ke Buku Pengetahuan · ✅ Update Knowledge Graph · ✅ Tandai resolved di Auto-Learning · ✅ Tambah edge semantic via AI
             </p>
 
             <div class="filter-tabs">
@@ -758,9 +919,7 @@
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: LEARNING QUEUE
-           ============================================================ -->
+      <!-- LEARNING -->
       <div class="page" id="page-learning">
         <div class="card">
           <div class="card-header">
@@ -769,8 +928,8 @@
           </div>
           <div class="card-body">
             <p class="text-muted">
-              Pertanyaan yang sering ditanya warga tapi belum ada di buku pengetahuan.
-              AI otomatis menaikkan prioritas berdasarkan frekuensi.
+              <b>Fitur Terpadu:</b> Saat Anda jawab di sini, otomatis juga akan:
+              ✅ Masuk ke Buku Pengetahuan · ✅ Update Knowledge Graph · ✅ Tandai resolved di Tak Terjawab · ✅ Tambah edge semantic via AI
             </p>
 
             <div class="stat-grid" style="margin-bottom:20px;">
@@ -843,9 +1002,7 @@
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: FEEDBACK & AKURASI
-           ============================================================ -->
+      <!-- FEEDBACK -->
       <div class="page" id="page-feedback">
         <div class="card">
           <div class="card-header">
@@ -992,9 +1149,7 @@
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: MEMORY
-           ============================================================ -->
+      <!-- MEMORY -->
       <div class="page" id="page-memory">
         <div class="card">
           <div class="card-header"><i class="fas fa-lightbulb"></i><span>Pengaturan Memori</span></div>
@@ -1009,11 +1164,11 @@
 
             <div class="form-grid">
               <div class="form-group">
-                <label>Min skor pakai memori <small>(default 60)</small></label>
+                <label>Min skor pakai memori <small>(default 75)</small></label>
                 <input type="number" id="memoryMinScore">
               </div>
               <div class="form-group">
-                <label>Min skor simpan baru <small>(default 40)</small></label>
+                <label>Min skor simpan baru <small>(default 55)</small></label>
                 <input type="number" id="memorySaveThreshold">
               </div>
             </div>
@@ -1064,9 +1219,7 @@
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: SESSIONS
-           ============================================================ -->
+      <!-- SESSIONS -->
       <div class="page" id="page-sessions">
         <div class="card">
           <div class="card-header"><i class="fas fa-comments"></i><span>Percakapan Aktif</span></div>
@@ -1085,9 +1238,7 @@
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: NOTIFICATIONS
-           ============================================================ -->
+      <!-- NOTIFICATIONS -->
       <div class="page" id="page-notifications">
         <div class="card">
           <div class="card-header"><i class="fas fa-bell"></i><span>Notifikasi Sistem</span></div>
@@ -1108,14 +1259,12 @@
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: BACKUP
-           ============================================================ -->
+      <!-- BACKUP -->
       <div class="page" id="page-backup">
         <div class="card">
           <div class="card-header"><i class="fas fa-database"></i><span>Backup Otomatis</span></div>
           <div class="card-body">
-            <p class="text-muted">Backup otomatis setiap hari jam 02.00. File dienkripsi AES-256.</p>
+            <p class="text-muted">Backup otomatis setiap hari jam 02.00. File dienkripsi AES-256. Termasuk knowledge graph & embedding cache.</p>
             <div class="action-bar">
               <button class="btn-primary-lg" onclick="runBackupNow()">
                 <i class="fas fa-download"></i> Backup Sekarang
@@ -1129,9 +1278,7 @@
         </div>
       </div>
 
-      <!-- ============================================================
-           PAGE: SECURITY
-           ============================================================ -->
+      <!-- SECURITY -->
       <div class="page" id="page-security">
         <div class="card">
           <div class="card-header"><i class="fas fa-key"></i><span>Ganti Password Admin</span></div>
@@ -1158,13 +1305,15 @@
           <div class="card-body">
             <ul class="info-list">
               <li><i class="fas fa-check-circle text-success"></i> Login pakai JWT (30 hari) + bcrypt</li>
-              <li><i class="fas fa-check-circle text-success"></i> Sesi login tersimpan — tidak logout saat refresh/restart</li>
+              <li><i class="fas fa-check-circle text-success"></i> Sesi login tersimpan</li>
               <li><i class="fas fa-check-circle text-success"></i> API key terenkripsi AES-256-GCM</li>
               <li><i class="fas fa-check-circle text-success"></i> Backup dienkripsi AES-256</li>
               <li><i class="fas fa-check-circle text-success"></i> Multi-provider dengan fallback otomatis</li>
-              <li><i class="fas fa-check-circle text-success"></i> Classifier anti-halusinasi aktif</li>
-              <li><i class="fas fa-check-circle text-success"></i> Provider Custom OpenAI-compatible</li>
-              <li><i class="fas fa-check-circle text-success"></i> Feedback user & auto-learning aktif</li>
+              <li><i class="fas fa-check-circle text-success"></i> Provider Role System (chat/embedding/enrichment/query-rewriter)</li>
+              <li><i class="fas fa-check-circle text-success"></i> RAG Hybrid (BM25 + Embedding + RRF)</li>
+              <li><i class="fas fa-check-circle text-success"></i> Query Rewriting otomatis</li>
+              <li><i class="fas fa-check-circle text-success"></i> Unified Learning Pipeline</li>
+              <li><i class="fas fa-check-circle text-success"></i> Knowledge Graph (Graph RAG) aktif</li>
             </ul>
           </div>
         </div>
@@ -1174,18 +1323,29 @@
   </main>
 </div>
 
-<!-- ============================================================
-     MODAL: TAMBAH JAWABAN KE PENGETAHUAN
-     ============================================================ -->
 <div class="modal-overlay" id="answerModal" onclick="closeAnswerModal(event)">
   <div class="modal-card">
     <div class="modal-header">
-      <h3><i class="fas fa-plus-circle"></i> Tambahkan Jawaban ke Pengetahuan</h3>
+      <h3><i class="fas fa-magic"></i> Jawab & Update Semua Otomatis</h3>
       <button class="modal-close" onclick="closeAnswerModal()">
         <i class="fas fa-times"></i>
       </button>
     </div>
     <div class="modal-body">
+      <div class="unified-info-box">
+        <i class="fas fa-info-circle"></i>
+        <div>
+          <strong>Satu kali jawab, semua terupdate otomatis:</strong>
+          <ul>
+            <li>📚 Masuk ke <b>Buku Pengetahuan</b></li>
+            <li>🕸️ Update <b>Knowledge Graph</b> (incremental, tanpa rebuild)</li>
+            <li>🧠 <b>Auto-Learning Queue</b> ditandai resolved</li>
+            <li>❓ <b>Tak Terjawab</b> ditandai resolved</li>
+            <li>✨ <b>Semantic Extraction</b> via AI (triple baru)</li>
+          </ul>
+        </div>
+      </div>
+
       <div class="form-group">
         <label>Pertanyaan Warga</label>
         <input type="text" id="modal-question" readonly>
@@ -1200,24 +1360,27 @@
       </div>
       <input type="hidden" id="modal-id">
       <input type="hidden" id="modal-source">
+
+      <div id="modalPipelineStatus" class="pipeline-status"></div>
     </div>
     <div class="modal-footer">
       <button class="btn-secondary" onclick="closeAnswerModal()">Batal</button>
-      <button class="btn-primary-lg" onclick="submitAnswerToKnowledge()">
-        <i class="fas fa-save"></i> Simpan ke Pengetahuan
+      <button class="btn-primary-lg" id="modalSubmitBtn" onclick="submitAnswerToKnowledge()">
+        <i class="fas fa-magic"></i> Simpan & Update Semua
       </button>
     </div>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://unpkg.com/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
 <script src="script.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js')
             .then(reg => console.log('[PWA] SW terdaftar:', reg.scope))
-            .catch(err => console.warn('[PWA] SW gagal:', err));
+            .catch(err => console.warn('[PWA] PWA gagal:', err));
     });
 }
 </script>
